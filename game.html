@@ -74,6 +74,7 @@ const TILE = 18;
 const COLS = Math.floor(VW / TILE);   // 20
 const ROWS = Math.floor(VH / TILE);   // 35
 const FLOOR = 0, WALL = 1;
+const HERO_R = 9;                     // agent collision radius (hero & enemies)
 let grid = [];                        // grid[row][col]
 
 // pixel -> cell helpers. Out-of-bounds counts as WALL so the
@@ -119,10 +120,25 @@ function carveSafeZone(c, r, rad){
     for (let x = Math.max(1, c - rad); x <= Math.min(COLS - 2, c + rad); x++)
       grid[y][x] = FLOOR;
 }
-function placeObstacle(){
+const OBST_MARGIN = 2;   // min floor gap (tiles) kept around every obstacle, so
+                         // passages stay >= 2 tiles wide. A 1-tile gap is floor
+                         // but too narrow for the hero's diameter (~= a tile).
+function regionAllFloor(c0, r0, c1, r1){
+  for (let r = r0; r <= r1; r++)
+    for (let c = c0; c <= c1; c++){
+      if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;  // hits the border/edge
+      if (grid[r][c] !== FLOOR) return false;                      // overlaps a wall/obstacle margin
+    }
+  return true;
+}
+// Stamp one rect/L obstacle, but only if a clear floor margin surrounds it
+// (so every passage is >= OBST_MARGIN wide). Returns whether it placed.
+function tryPlaceObstacle(){
   const w = 2 + ri(3), h = 2 + ri(3);              // 2..4 tiles each side
   const c0 = 1 + ri(COLS - 2 - w);                 // stay off the border
   const r0 = 1 + ri(ROWS - 2 - h);
+  const m = OBST_MARGIN;
+  if (!regionAllFloor(c0 - m, r0 - m, c0 + w - 1 + m, r0 + h - 1 + m)) return false;
   for (let r = r0; r < r0 + h; r++)
     for (let c = c0; c < c0 + w; c++)
       grid[r][c] = WALL;
@@ -135,6 +151,7 @@ function placeObstacle(){
       for (let c = cornerC; c < cornerC + cw; c++)
         grid[r][c] = FLOOR;
   }
+  return true;
 }
 // Flood-fill of reachable FLOOR cells from a start cell (4-dir).
 function floodReachable(sc, sr){
@@ -161,22 +178,80 @@ function countFloor(){
       if (grid[r][c] === FLOOR) n++;
   return n;
 }
-// Build a connected map with the hero's cell guaranteed floor.
-// Returns the list of reachable floor cells (used for spawns).
-function generateMap(heroC, heroR){
-  for (let attempt = 0; attempt < 30; attempt++){
-    blankGrid();
-    const k = 4 + ri(5);                 // 4..8 obstacles
-    for (let i = 0; i < k; i++) placeObstacle();
-    carveSafeZone(heroC, heroR, 2);      // never trap the hero
-    const { cells } = floodReachable(heroC, heroR);
-    // connected == every floor cell was reached from the hero
-    if (cells.length === countFloor()) return cells;
+// A cell is "standable" if a circle of the agent radius, centred in it, doesn't
+// touch a wall — i.e. the hero can actually occupy it. (A 1-tile gap is floor
+// but NOT standable: the hero's diameter ~= a tile.) Uses the SAME
+// circleHitsWall the movement code uses, so generation and physics agree.
+function cellStandable(c, r, rad){
+  const p = cellCenter(c, r);
+  return !circleHitsWall(p.x, p.y, rad);
+}
+// Flood-fill over STANDABLE cells (4-dir). Cardinally-adjacent standable cells
+// are always traversable, so this models where the hero can really go.
+function floodStandable(sc, sr, rad){
+  const seen = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
+  const cells = [];
+  if (grid[sr][sc] !== FLOOR || !cellStandable(sc, sr, rad)) return { seen, cells };
+  const stack = [[sc, sr]]; seen[sr][sc] = true;
+  while (stack.length){
+    const [c, r] = stack.pop(); cells.push([c, r]);
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nc = c + dc, nr = r + dr;
+      if (nc < 0 || nr < 0 || nc >= COLS || nr >= ROWS) continue;
+      if (seen[nr][nc] || grid[nr][nc] !== FLOOR || !cellStandable(nc, nr, rad)) continue;
+      seen[nr][nc] = true; stack.push([nc, nr]);
+    }
   }
-  // Fallback: border-only arena is trivially connected.
+  return { seen, cells };
+}
+function countStandable(rad){
+  let n = 0;
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[r][c] === FLOOR && cellStandable(c, r, rad)) n++;
+  return n;
+}
+// The hero may sit on a floor cell whose CENTRE is wall-adjacent (e.g. hugging
+// the border): a valid pixel position, but not "standable" by cell centre. Find
+// the nearest standable cell (BFS) to use as the flood origin / hero footing.
+function standableStart(c, r, rad){
+  const seen = Array.from({ length: ROWS }, () => new Array(COLS).fill(false));
+  const q = [[c, r]];
+  if (r >= 0 && r < ROWS && c >= 0 && c < COLS) seen[r][c] = true;
+  while (q.length){
+    const [cc, rr] = q.shift();
+    if (cc>=0 && rr>=0 && cc<COLS && rr<ROWS && grid[rr][cc] === FLOOR && cellStandable(cc, rr, rad)) return [cc, rr];
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nc = cc+dc, nr = rr+dr;
+      if (nc<0 || nr<0 || nc>=COLS || nr>=ROWS || seen[nr][nc]) continue;
+      seen[nr][nc] = true; q.push([nc, nr]);
+    }
+  }
+  return null;
+}
+// Build a map the hero can physically traverse. Connectivity is RADIUS-AWARE:
+// flood over standable cells, not just floor cells — a 1-tile gap is floor-
+// connected but too narrow for the hero. Regenerate until every standable cell
+// is reachable from the hero. Returns standable+reachable cells (enemy spawns
+// use them, so nothing spawns where the hero can't reach).
+function generateMap(heroC, heroR){
+  const want = 4 + ri(5);              // aim for 4..8 obstacles
+  for (let attempt = 0; attempt < 40; attempt++){
+    blankGrid();
+    let placed = 0, tries = 0;
+    while (placed < want && tries < 60){ tries++; if (tryPlaceObstacle()) placed++; }
+    carveSafeZone(heroC, heroR, 2);    // never trap the hero
+    const start = standableStart(heroC, heroR, HERO_R);
+    if (!start) continue;
+    const { cells } = floodStandable(start[0], start[1], HERO_R);
+    // good == every standable cell is reachable from the hero (no walled-in pockets)
+    if (cells.length === countStandable(HERO_R)) return cells;
+  }
+  // Fallback: border-only arena is trivially traversable.
   blankGrid();
   carveSafeZone(heroC, heroR, 2);
-  return floodReachable(heroC, heroR).cells;
+  const s = standableStart(heroC, heroR, HERO_R) || [heroC, heroR];
+  return floodStandable(s[0], s[1], HERO_R).cells;
 }
 
 // ---------- Input ----------
@@ -343,7 +418,7 @@ const ORB_PULL   = 170;          // px/sec orb drift speed
 function makeHero(){
   return {
     tag:'hero',
-    x:VW/2, y:VH*0.75, r:9,
+    x:VW/2, y:VH*0.75, r:HERO_R,
     vx:0, vy:0, speed:140,
     hp:100, maxHp:100,
     energy:100, maxEnergy:100, starveTimer:0,
@@ -361,7 +436,7 @@ function makeHero(){
 function makeEnemy(x,y){
   return {
     tag:'enemy',
-    x, y, r:9,
+    x, y, r:HERO_R,
     speed:55,
     hp:30, maxHp:30,
     touchDmg:10, touchCooldown:0,
