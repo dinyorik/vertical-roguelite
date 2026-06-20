@@ -15,7 +15,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
-<div id="hint">move: drag / WASD &nbsp;·&nbsp; shoot: hold / arrows &nbsp;·&nbsp; swap: tap / Q &nbsp;·&nbsp; pick: 1-3</div>
+<div id="hint">WASD move · arrows/space shoot · Q swap · 1-3 pick &nbsp;·&nbsp; mobile: on-screen controls</div>
 <script>
 // ============================================================
 //  VERTICAL ROGUELITE — CORE SKELETON
@@ -172,62 +172,97 @@ function generateMap(heroC, heroR){
 }
 
 // ---------- Input ----------
+// One game logic, two frontends: desktop keyboard/mouse and a mobile
+// on-screen control layer. Both only produce the SHARED signals below
+// (moveVec, fireHeld) and call the same actions — never duplicated logic.
 const keys = {};
-// touch: drag to move (holding = shooting); a quick still tap = swap weapon
-let touchMove = {x:0, y:0, active:false};
-let touchOrigin = null;
-let touchStartT = 0;       // when the current touch began (for tap detection)
-let touchDragged = false;  // did this touch move far enough to be a drag?
+let moveVec = { x:0, y:0, active:false };  // movement direction (joystick / mouse-drag)
+let fireHeld = false;                      // FIRE held via the mobile attack button
+
+// Touch device? If so, show the on-screen controls and route touches through
+// them. On desktop they stay hidden and keyboard + mouse drive play.
+const TOUCH = (typeof window !== 'undefined') &&
+  (('ontouchstart' in window) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
+
 function toLocal(t){
   const r = canvas.getBoundingClientRect();
   return { x:(t.clientX-r.left)/(r.width/VW), y:(t.clientY-r.top)/(r.height/VH) };
 }
+
+// On-screen controls geometry (data, shared by hit-testing and rendering).
+// Floating left joystick + a compact right cluster of 3 buttons (portrait).
+const JOY = { r:46, kr:22, dead:8, id:null, baseX:0, baseY:0, curX:0, curY:0, active:false };
+const BTN = {
+  attack:  { x:VW-52,  y:VH-58,  r:34, label:'FIRE'  },
+  ability: { x:VW-116, y:VH-92,  r:24, label:'SKILL' },
+  swap:    { x:VW-66,  y:VH-150, r:22, label:'SWAP'  },
+};
+let attackTouchId = null;   // identifier of the touch currently holding ATTACK
+const hitBtn = (p, b) => Math.hypot(p.x-b.x, p.y-b.y) <= b.r;
+
+// Multi-touch: every touch is tracked by its identifier, so the joystick
+// (left thumb) and a button (right thumb) work AT THE SAME TIME — one touch
+// never steals or cancels another.
 canvas.addEventListener('touchstart', e=>{ e.preventDefault();
-  const p = toLocal(e.touches[0]);
-  if (hero.dead){ resetWorld(); return; }            // tap to restart
-  if (round.state === 'INTERMISSION'){ tapChoice(p.x, p.y); return; }
-  // COMBAT: begin a movement drag (also a possible tap-to-swap)
-  touchOrigin = p; touchMove.active = true;
-  touchStartT = performance.now(); touchDragged = false;
+  for(const t of e.changedTouches){
+    const p = toLocal(t);
+    if(hero.dead){ resetWorld(); return; }
+    if(round.state === 'INTERMISSION'){ tapChoice(p.x, p.y); continue; }
+    // right-side action buttons
+    if(hitBtn(p, BTN.attack)){ attackTouchId = t.identifier; fireHeld = true; continue; }
+    if(hitBtn(p, BTN.ability)){ useAbility(); continue; }
+    if(hitBtn(p, BTN.swap)){ swapWeapon(); continue; }
+    // left half = floating joystick (one at a time)
+    if(p.x < VW*0.5 && !JOY.active){
+      JOY.id = t.identifier; JOY.baseX = JOY.curX = p.x; JOY.baseY = JOY.curY = p.y; JOY.active = true;
+      moveVec.active = true; moveVec.x = 0; moveVec.y = 0;
+    }
+  }
 },{passive:false});
 canvas.addEventListener('touchmove', e=>{ e.preventDefault();
-  if (round.state !== 'COMBAT' || !touchOrigin) return;
-  const p = toLocal(e.touches[0]);
-  let dx = p.x-touchOrigin.x, dy = p.y-touchOrigin.y;
-  const len = Math.hypot(dx,dy)||1;
-  if(len>8) touchDragged = true;
-  if(len>4){ touchMove.x = dx/len; touchMove.y = dy/len; }
-  else { touchMove.x = 0; touchMove.y = 0; }
+  for(const t of e.changedTouches){
+    if(t.identifier !== JOY.id || !JOY.active) continue;
+    const p = toLocal(t);
+    let dx = p.x-JOY.baseX, dy = p.y-JOY.baseY;
+    const len = Math.hypot(dx,dy);
+    if(len > JOY.r){ dx = dx/len*JOY.r; dy = dy/len*JOY.r; }   // clamp stick to the ring
+    JOY.curX = JOY.baseX+dx; JOY.curY = JOY.baseY+dy;
+    if(len < JOY.dead){ moveVec.x = 0; moveVec.y = 0; }         // centre dead zone
+    else { const u = Math.hypot(dx,dy)||1; moveVec.x = dx/u; moveVec.y = dy/u; }  // unit direction
+  }
 },{passive:false});
-canvas.addEventListener('touchend', e=>{ e.preventDefault();
-  // a quick, still tap during combat = swap weapon
-  if(round.state==='COMBAT' && !hero.dead && !touchDragged && (performance.now()-touchStartT) < 220)
-    swapWeapon();
-  touchOrigin=null; touchMove={x:0,y:0,active:false};
-},{passive:false});
+function endTouch(e){ e.preventDefault();
+  for(const t of e.changedTouches){
+    if(t.identifier === JOY.id){ JOY.active = false; JOY.id = null; moveVec.active = false; moveVec.x = 0; moveVec.y = 0; }
+    if(t.identifier === attackTouchId){ attackTouchId = null; fireHeld = false; }
+  }
+}
+canvas.addEventListener('touchend', endTouch, {passive:false});
+canvas.addEventListener('touchcancel', endTouch, {passive:false});
 
-// mouse mirrors touch so the game is fully playable on desktop — this is
-// also what makes "tap / click to restart" work with a mouse.
+// Desktop mouse: menus (restart / pick) always; in combat, drag = move and
+// hold = fire, a quick click = swap. (Keyboard stays the primary desktop path.)
+let mouseDown = false, mouseOrigin = null, mouseStartT = 0, mouseDragged = false;
 canvas.addEventListener('mousedown', e=>{
   const p = toLocal(e);
-  if (hero.dead){ resetWorld(); return; }            // click to restart
-  if (round.state === 'INTERMISSION'){ tapChoice(p.x, p.y); return; }
-  touchOrigin = p; touchMove.active = true;
-  touchStartT = performance.now(); touchDragged = false;
+  if(hero.dead){ resetWorld(); return; }              // click to restart
+  if(round.state === 'INTERMISSION'){ tapChoice(p.x, p.y); return; }
+  mouseDown = true; mouseOrigin = p; mouseStartT = performance.now(); mouseDragged = false;
+  moveVec.active = true; moveVec.x = 0; moveVec.y = 0;
 });
 canvas.addEventListener('mousemove', e=>{
-  if (round.state !== 'COMBAT' || !touchOrigin) return;
+  if(!mouseDown || round.state !== 'COMBAT') return;
   const p = toLocal(e);
-  let dx = p.x-touchOrigin.x, dy = p.y-touchOrigin.y;
+  let dx = p.x-mouseOrigin.x, dy = p.y-mouseOrigin.y;
   const len = Math.hypot(dx,dy)||1;
-  if(len>8) touchDragged = true;
-  if(len>4){ touchMove.x = dx/len; touchMove.y = dy/len; }
-  else { touchMove.x = 0; touchMove.y = 0; }
+  if(len>8) mouseDragged = true;
+  if(len>4){ moveVec.x = dx/len; moveVec.y = dy/len; }
+  else { moveVec.x = 0; moveVec.y = 0; }
 });
 window.addEventListener('mouseup', ()=>{   // window: releasing off-canvas still ends the drag
-  if(round.state==='COMBAT' && !hero.dead && !touchDragged && (performance.now()-touchStartT) < 220)
-    swapWeapon();                          // quick still click = swap (mirrors tap)
-  touchOrigin=null; touchMove={x:0,y:0,active:false};
+  if(round.state==='COMBAT' && !hero.dead && !mouseDragged && (performance.now()-mouseStartT) < 220)
+    swapWeapon();
+  mouseDown = false; mouseOrigin = null; moveVec.active = false; moveVec.x = 0; moveVec.y = 0;
 });
 
 addEventListener('keydown', e=>{
@@ -373,6 +408,11 @@ function swapWeapon(){
   if (hero.dead) return;
   hero.activeWeapon = (hero.activeWeapon + 1) % hero.weapons.length;
 }
+// Ability hook — wired to the mobile SKILL button (a desktop key comes in P3).
+// NO-OP placeholder: no ability equipped yet; the dash fills this in Phase 3.
+function useAbility(){
+  // Phase 3: if ability ready -> run effect (dash) -> start its cooldown.
+}
 
 // ============================================================
 //  ROUND STATE MACHINE
@@ -406,7 +446,8 @@ function enterIntermission(){
   round.timer = INTERMISSION_TIME;
   // clear shots and uncollected orbs so they don't carry across waves
   entities = entities.filter(e => e.tag !== 'bullet' && e.tag !== 'orb');
-  touchMove = {x:0,y:0,active:false}; touchOrigin = null;
+  moveVec = {x:0,y:0,active:false}; JOY.active = false; JOY.id = null;
+  fireHeld = false; attackTouchId = null; mouseDown = false;
   rollChoices();
 }
 // Enemies spawn only on reachable floor cells, kept away from the
@@ -467,11 +508,13 @@ function moveWithWalls(e, mx, my, dt){
   const ny = e.y + my * e.speed * dt;
   if (!circleHitsWall(e.x, ny, e.r)) e.y = ny;
 }
-// touch fires only once it's a hold/drag, so a quick tap (swap) doesn't shoot
+// Fire signal from any frontend: keyboard (arrows/space), the mobile ATTACK
+// button (fireHeld), or a held desktop mouse (after a short delay so a quick
+// click reads as a swap, not a shot).
 function firing(){
   const kb = keys['arrowup']||keys['arrowdown']||keys['arrowleft']||keys['arrowright']||keys[' '];
-  const held = touchMove.active && (touchDragged || (performance.now() - touchStartT) > 150);
-  return kb || held;
+  const mouseHold = mouseDown && (mouseDragged || (performance.now() - mouseStartT) > 150);
+  return kb || fireHeld || mouseHold;
 }
 
 function sysHeroControl(dt){
@@ -482,7 +525,7 @@ function sysHeroControl(dt){
   if(keys['d']||keys['arrowright']) mx+=1;
   if(keys['w']||keys['arrowup'])    my-=1;
   if(keys['s']||keys['arrowdown'])  my+=1;
-  if(touchMove.active){ mx+=touchMove.x; my+=touchMove.y; }
+  if(moveVec.active){ mx+=moveVec.x; my+=moveVec.y; }
   const len = Math.hypot(mx,my);
   if(len>0){ mx/=len; my/=len; moveWithWalls(hero, mx, my, dt); }
 
@@ -659,6 +702,8 @@ function draw(){
     ctx.fillText('reached wave '+round.wave, VW/2, VH/2+14);
     ctx.fillText('tap / click / R to restart', VW/2, VH/2+36);
   }
+
+  drawControls();
 }
 function drawIntermission(){
   ctx.fillStyle='rgba(8,8,12,0.62)'; ctx.fillRect(0,0,VW,VH);
@@ -676,6 +721,35 @@ function drawIntermission(){
     ctx.fillStyle='#aab'; ctx.font='11px monospace';
     ctx.fillText(cr.choice.desc, cr.x+14, cr.y+44);
   });
+}
+
+// On-screen mobile controls: a translucent overlay drawn last. Shown only on
+// touch devices and only during active combat (menus are handled by taps).
+function drawControls(){
+  if(!TOUCH || hero.dead || round.state !== 'COMBAT') return;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // joystick: faint home ring when idle; live ring + stick while dragging
+  if(JOY.active){
+    ctx.globalAlpha = 0.22; ctx.strokeStyle = '#cfe8ff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(JOY.baseX, JOY.baseY, JOY.r, 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = 0.40; ctx.fillStyle = '#cfe8ff';
+    ctx.beginPath(); ctx.arc(JOY.curX, JOY.curY, JOY.kr, 0, Math.PI*2); ctx.fill();
+  } else {
+    ctx.globalAlpha = 0.12; ctx.strokeStyle = '#cfe8ff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(70, VH-72, JOY.r, 0, Math.PI*2); ctx.stroke();
+  }
+  const button = (b, lit, pressed) => {
+    ctx.globalAlpha = pressed ? 0.55 : (lit ? 0.34 : 0.16);
+    ctx.fillStyle = '#9fd6ff';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = lit ? 0.95 : 0.45; ctx.fillStyle = '#0c0c12'; ctx.font = 'bold 10px monospace';
+    ctx.fillText(b.label, b.x, b.y);
+  };
+  button(BTN.attack, true, fireHeld);
+  button(BTN.ability, false, false);   // dim: no ability equipped yet (Phase 3 lights it)
+  button(BTN.swap, true, false);
+  ctx.restore();
 }
 
 // ---------- Game loop (fixed timestep) ----------
