@@ -39,7 +39,7 @@
 
 ## Build order
 
-### Phase 1 — Combat core: 2 weapons + swap + energy
+### Phase 1 — Combat core: 2 weapons + swap + energy  ✅ DONE (2026-06-20)
 **Goal:** replace the hardcoded shooting with a data-driven weapon system, add
 melee, and add the energy economy that powers ranged fire.
 
@@ -65,7 +65,7 @@ melee, and add the energy economy that powers ranged fire.
 - **Deferred:** more weapon kinds/variants; weapon drops/pickups (both from the
   start for now).
 
-### Phase 2 — Hero ability: dash
+### Phase 2 — Hero ability: dash  ← NEXT
 **Goal:** one active ability — a dash — on a cooldown.
 
 - **Skeleton:** an ability slot on the hero = `data {cooldown, effect}` + a

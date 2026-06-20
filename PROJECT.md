@@ -153,10 +153,14 @@ Building these now is the main risk. Explicitly excluded:
 
 ## 7. Roadmap after this (direction, not tasks)
 
+> ⚠ Superseded by ROADMAP.md — see it for the detailed phases and live status.
+> Done so far: this section's item 1, plus Phase 1 (combat core: weapons /
+> melee / swap / energy). Current: Phase 2 (dash).
+
 1. **DONE:** wave loop + tile map + cover walls + between-wave choice.
 2. **Enemy attack archetypes** (3): melee charger, ranged kiter, telegraphed
    heavy hitter. This is what gives an agent a real *decision space* — without
-   varied attacks, the optimal enemy policy is trivial and nothing to learn.  ← now
+   varied attacks, the optimal enemy policy is trivial and nothing to learn.
 3. **Distance-as-mechanic + player vulnerability windows** (reload, dash
    cooldown, post-attack recovery) — so positioning matters and an agent has
    something to read and exploit.
