@@ -15,7 +15,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
-<div id="hint">move: drag / WASD &nbsp;·&nbsp; shoot: hold / arrows &nbsp;·&nbsp; pick: tap / 1-3</div>
+<div id="hint">move: drag / WASD &nbsp;·&nbsp; shoot: hold / arrows &nbsp;·&nbsp; swap: tap / Q &nbsp;·&nbsp; pick: 1-3</div>
 <script>
 // ============================================================
 //  VERTICAL ROGUELITE — CORE SKELETON
@@ -26,13 +26,18 @@
 //  Prior iteration: tile-grid map, cover walls, COMBAT/INTERMISSION
 //  wave loop, between-wave upgrade pick.
 //
-//  PHASE 1 (refactor step): shooting is no longer hardcoded on the
-//  hero. A weapon is DATA ({kind, damage, cooldown, manaCost, ...})
-//  and one fire system dispatches on `kind`. The hero holds a
-//  `weapons` array with an active index. Right now only a `ranged`
-//  weapon exists; melee + energy are added next. Projectile params
-//  (size/count/speed) are read from weapon data so later buffs can
-//  modify them at spawn without touching this code.
+//  PHASE 1 — combat core:
+//   - Weapons are DATA ({kind, damage, cooldown, manaCost, ...}); one
+//     fire system dispatches on `kind`. Hero holds TWO weapons, one
+//     active; tap / Q / Tab swaps.
+//   - ranged: spawns projectiles, costs energy. melee: a free arc
+//     swing that damages enemies AND destroys enemy bullets in the
+//     arc (attack + shield).
+//   - energy economy: ranged spends energy; energy drops from kills
+//     (collectible orbs) and regenerates passively, ramping the
+//     longer you're starved so you're never locked out of ranged.
+//  Projectile params are read from weapon data so later buffs can
+//  modify them at spawn without touching the fire path.
 // ============================================================
 
 // ---------- Canvas (portrait, fits iPhone) ----------
@@ -81,6 +86,8 @@ function circleHitsWall(x, y, r){
 }
 const cellCenter = (c, r) => ({ x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 });
 const ri = n => Math.floor(Math.random() * n);   // random int 0..n-1
+// smallest absolute angle between two headings (handles wraparound)
+function angleDiff(a, b){ let d = Math.abs(a - b) % (Math.PI * 2); if (d > Math.PI) d = Math.PI * 2 - d; return d; }
 
 // ---------- Map generation ----------
 // Primitive cover: a border ring of wall, then 4-8 scattered
@@ -166,9 +173,11 @@ function generateMap(heroC, heroR){
 
 // ---------- Input ----------
 const keys = {};
-// touch: drag anywhere to set a movement vector; holding = shooting
+// touch: drag to move (holding = shooting); a quick still tap = swap weapon
 let touchMove = {x:0, y:0, active:false};
 let touchOrigin = null;
+let touchStartT = 0;       // when the current touch began (for tap detection)
+let touchDragged = false;  // did this touch move far enough to be a drag?
 function toLocal(t){
   const r = canvas.getBoundingClientRect();
   return { x:(t.clientX-r.left)/(r.width/VW), y:(t.clientY-r.top)/(r.height/VH) };
@@ -177,19 +186,25 @@ canvas.addEventListener('touchstart', e=>{ e.preventDefault();
   const p = toLocal(e.touches[0]);
   if (hero.dead){ resetWorld(); return; }            // tap to restart
   if (round.state === 'INTERMISSION'){ tapChoice(p.x, p.y); return; }
-  // COMBAT: begin a movement drag
+  // COMBAT: begin a movement drag (also a possible tap-to-swap)
   touchOrigin = p; touchMove.active = true;
+  touchStartT = performance.now(); touchDragged = false;
 },{passive:false});
 canvas.addEventListener('touchmove', e=>{ e.preventDefault();
   if (round.state !== 'COMBAT' || !touchOrigin) return;
   const p = toLocal(e.touches[0]);
   let dx = p.x-touchOrigin.x, dy = p.y-touchOrigin.y;
   const len = Math.hypot(dx,dy)||1;
+  if(len>8) touchDragged = true;
   if(len>4){ touchMove.x = dx/len; touchMove.y = dy/len; }
   else { touchMove.x = 0; touchMove.y = 0; }
 },{passive:false});
 canvas.addEventListener('touchend', e=>{ e.preventDefault();
-  touchOrigin=null; touchMove={x:0,y:0,active:false}; },{passive:false});
+  // a quick, still tap during combat = swap weapon
+  if(round.state==='COMBAT' && !hero.dead && !touchDragged && (performance.now()-touchStartT) < 220)
+    swapWeapon();
+  touchOrigin=null; touchMove={x:0,y:0,active:false};
+},{passive:false});
 
 addEventListener('keydown', e=>{
   const k = e.key.toLowerCase();
@@ -199,7 +214,9 @@ addEventListener('keydown', e=>{
     if (k === '1') pickChoice(0);
     else if (k === '2') pickChoice(1);
     else if (k === '3') pickChoice(2);
+    return;
   }
+  if (round.state === 'COMBAT' && (k === 'q' || k === 'tab')){ e.preventDefault(); swapWeapon(); }
 });
 addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
 
@@ -218,10 +235,26 @@ function makeRanged(){
   return {
     kind:'ranged', name:'Blaster',
     damage:12, cooldown:0.18, cooldownLeft:0,
-    manaCost:6,                       // energy per shot (used once energy exists)
+    manaCost:6,                       // energy spent per shot
     bulletSpeed:380, bulletCount:1, spread:0.30, bulletRadius:4,
   };
 }
+function makeMelee(){
+  return {
+    kind:'melee', name:'Blade',
+    damage:26, cooldown:0.34, cooldownLeft:0,
+    manaCost:0,                       // melee is always free
+    arcRadius:46, arcHalf:1.0,        // reach (px) + half-angle (rad ~57deg each side)
+  };
+}
+
+// ---------- Energy economy tunables (placeholders — tune by feel) ----------
+const ENERGY_REGEN_BASE = 8;     // energy/sec baseline regen
+const ENERGY_REGEN_RAMP = 14;    // extra energy/sec for each second starved
+const ENERGY_REGEN_MAX  = 70;    // cap on regen rate
+const ORB_VALUE = 10;            // energy restored per pickup
+const ORB_MAGNET = 46;           // px: orbs within this drift toward hero
+const ORB_PULL   = 170;          // px/sec orb drift speed
 
 // Factory functions build entities by composing components.
 // Components are just data fields — behaviour lives in systems below.
@@ -231,8 +264,11 @@ function makeHero(){
     x:VW/2, y:VH*0.75, r:9,
     vx:0, vy:0, speed:140,
     hp:100, maxHp:100,
-    weapons:[ makeRanged() ],         // melee gets pushed in next step
+    energy:100, maxEnergy:100, starveTimer:0,
+    weapons:[ makeRanged(), makeMelee() ],
     activeWeapon:0,
+    aimX:0, aimY:-1,                  // last aim direction (melee faces this)
+    meleeFx:null,                     // transient swing visual {angle,half,radius,t,tMax}
     color:'#5ad1ff', dead:false,
   };
 }
@@ -256,38 +292,62 @@ function makeBullet(x,y,dx,dy,owner,dmg,speed,radius){
     color: owner==='hero' ? '#fff2a8' : '#ff9a5a', dead:false,
   };
 }
+function spawnEnergyOrb(x, y){
+  add({ tag:'orb', x, y, r:5, value:ORB_VALUE, dead:false, color:'#7cffd0' });
+}
 
 // ---------- Combat helpers ----------
 // Apply damage to an enemy in ONE place, so every damage source
-// (bullets now, melee soon) shares the same death path.
+// (bullets, melee) shares the same death path — incl. dropping an
+// energy orb on kill.
 function hurtEnemy(e, dmg){
   if (e.dead) return;
   e.hp -= dmg;
-  if (e.hp <= 0) e.dead = true;
+  if (e.hp <= 0){ e.dead = true; spawnEnergyOrb(e.x, e.y); }
 }
-// Fire the active weapon if its cooldown is ready. Returns nothing;
-// per-kind handlers report whether they actually fired so we only
-// spend the cooldown on a real shot (matters once energy can block).
+// Fire the active weapon if its cooldown is ready. Per-kind handlers
+// return whether they actually fired, so we only spend the cooldown
+// on a real action (ranged with no energy fires nothing).
 function fireActive(){
   const w = hero.weapons[hero.activeWeapon];
   if (w.cooldownLeft > 0) return;
   let fired = false;
   if (w.kind === 'ranged') fired = fireRanged(w);
+  else if (w.kind === 'melee') fired = fireMelee(w);
   if (fired) w.cooldownLeft = w.cooldown;
 }
 function fireRanged(w){
-  // auto-aim at nearest enemy (default straight up if none)
-  const target = nearest(hero, 'enemy');
-  let ax=0, ay=-1;
-  if(target){ ax=target.x-hero.x; ay=target.y-hero.y; const l=Math.hypot(ax,ay)||1; ax/=l; ay/=l; }
+  if (hero.energy < w.manaCost) return false;     // not enough energy -> no shot
+  hero.energy -= w.manaCost;
   // fan bulletCount pellets across `spread` radians around the aim
-  const base = Math.atan2(ay, ax), n = w.bulletCount;
+  const base = Math.atan2(hero.aimY, hero.aimX), n = w.bulletCount;
   for(let i=0;i<n;i++){
     const t = n===1 ? 0 : (i/(n-1) - 0.5);   // -0.5..0.5
     const a = base + t*w.spread;
     add(makeBullet(hero.x, hero.y, Math.cos(a), Math.sin(a), 'hero', w.damage, w.bulletSpeed, w.bulletRadius));
   }
   return true;
+}
+// Melee swing: one arc in the aim direction. Damages enemies in the
+// arc AND destroys enemy bullets in the arc — it is attack + shield.
+// (Enemy bullets don't exist until Phase 3; the block is built now.)
+function fireMelee(w){
+  const baseAngle = Math.atan2(hero.aimY, hero.aimX);
+  for (const e of entities){
+    if (e.dead) continue;
+    if (e.tag !== 'enemy' && !(e.tag === 'bullet' && e.owner === 'enemy')) continue;
+    const dx = e.x - hero.x, dy = e.y - hero.y, d = Math.hypot(dx, dy);
+    if (d > w.arcRadius + e.r) continue;                       // out of reach
+    if (angleDiff(Math.atan2(dy, dx), baseAngle) > w.arcHalf) continue;  // outside the arc
+    if (e.tag === 'enemy') hurtEnemy(e, w.damage);
+    else e.dead = true;                                        // enemy bullet blocked
+  }
+  hero.meleeFx = { angle:baseAngle, half:w.arcHalf, radius:w.arcRadius, t:0.12, tMax:0.12 };
+  return true;
+}
+function swapWeapon(){
+  if (hero.dead) return;
+  hero.activeWeapon = (hero.activeWeapon + 1) % hero.weapons.length;
 }
 
 // ============================================================
@@ -320,7 +380,8 @@ function startCombat(){
 function enterIntermission(){
   round.state = 'INTERMISSION';
   round.timer = INTERMISSION_TIME;
-  entities = entities.filter(e => e.tag !== 'bullet');  // clear shots in flight
+  // clear shots and uncollected orbs so they don't carry across waves
+  entities = entities.filter(e => e.tag !== 'bullet' && e.tag !== 'orb');
   touchMove = {x:0,y:0,active:false}; touchOrigin = null;
   rollChoices();
 }
@@ -339,7 +400,7 @@ function spawnWave(n, reachable, hc, hr){
 
 // ---------- Between-wave choices ----------
 // Hardcoded pool. No currency, no shop — pick one, it applies,
-// next wave. Weapon upgrades now target the ranged weapon's data.
+// next wave. Weapon upgrades target the ranged weapon's data.
 const rangedOf = h => h.weapons.find(w => w.kind === 'ranged');
 const CHOICE_POOL = [
   { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => { rangedOf(h).damage += 6; } },
@@ -383,6 +444,12 @@ function moveWithWalls(e, mx, my, dt){
   const ny = e.y + my * e.speed * dt;
   if (!circleHitsWall(e.x, ny, e.r)) e.y = ny;
 }
+// touch fires only once it's a hold/drag, so a quick tap (swap) doesn't shoot
+function firing(){
+  const kb = keys['arrowup']||keys['arrowdown']||keys['arrowleft']||keys['arrowright']||keys[' '];
+  const held = touchMove.active && (touchDragged || (performance.now() - touchStartT) > 150);
+  return kb || held;
+}
 
 function sysHeroControl(dt){
   if(hero.dead) return;
@@ -396,10 +463,24 @@ function sysHeroControl(dt){
   const len = Math.hypot(mx,my);
   if(len>0){ mx/=len; my/=len; moveWithWalls(hero, mx, my, dt); }
 
+  // aim: track nearest enemy; if none, face the movement direction
+  const target = nearest(hero, 'enemy');
+  if(target){ const dx=target.x-hero.x, dy=target.y-hero.y, l=Math.hypot(dx,dy)||1; hero.aimX=dx/l; hero.aimY=dy/l; }
+  else if(len>0){ hero.aimX=mx; hero.aimY=my; }
+
+  // energy regen — ramps the longer the hero can't afford a ranged shot,
+  // so you're never permanently locked out (melee covers the gap).
+  const rw = rangedOf(hero);
+  if(rw && hero.energy < rw.manaCost) hero.starveTimer += dt; else hero.starveTimer = 0;
+  const regen = Math.min(ENERGY_REGEN_MAX, ENERGY_REGEN_BASE + ENERGY_REGEN_RAMP*hero.starveTimer);
+  hero.energy = Math.min(hero.maxEnergy, hero.energy + regen*dt);
+
+  // tick the transient melee swing visual
+  if(hero.meleeFx){ hero.meleeFx.t -= dt; if(hero.meleeFx.t <= 0) hero.meleeFx = null; }
+
   // weapons: tick every weapon's cooldown, fire the active one while held
   for(const w of hero.weapons) if(w.cooldownLeft > 0) w.cooldownLeft -= dt;
-  const shooting = touchMove.active || keys['arrowup']||keys['arrowdown']||keys['arrowleft']||keys['arrowright']||keys[' '];
-  if(shooting) fireActive();
+  if(firing()) fireActive();
 }
 
 function sysEnemyAI(dt){
@@ -437,6 +518,20 @@ function sysBullets(dt){
           break;
         }
       }
+    }
+  }
+}
+
+// Energy orbs dropped by kills: drift toward the hero when close,
+// collected on contact.
+function sysOrbs(dt){
+  for(const o of entities){
+    if(o.tag!=='orb'||o.dead) continue;
+    const dx=hero.x-o.x, dy=hero.y-o.y, d=Math.hypot(dx,dy)||1;
+    if(d < ORB_MAGNET){ o.x += (dx/d)*ORB_PULL*dt; o.y += (dy/d)*ORB_PULL*dt; }
+    if(d < hero.r + o.r + 2){
+      hero.energy = Math.min(hero.maxEnergy, hero.energy + o.value);
+      o.dead = true;
     }
   }
 }
@@ -490,6 +585,16 @@ function draw(){
   ctx.clearRect(0,0,VW,VH);
   drawMap();
 
+  // melee swing arc (fades out), under the entities
+  if(hero.meleeFx && !hero.dead){
+    const f=hero.meleeFx, a=Math.max(0, f.t/f.tMax);
+    ctx.fillStyle='rgba(180,220,255,'+(0.30*a)+')';
+    ctx.beginPath();
+    ctx.moveTo(hero.x, hero.y);
+    ctx.arc(hero.x, hero.y, f.radius, f.angle-f.half, f.angle+f.half);
+    ctx.closePath(); ctx.fill();
+  }
+
   for(const e of entities){
     ctx.fillStyle = e.color;
     ctx.beginPath();
@@ -501,16 +606,25 @@ function draw(){
       ctx.fillStyle='#000'; ctx.fillRect(x,y,w,h);
       ctx.fillStyle='#ff5a78'; ctx.fillRect(x,y,w*(e.hp/e.maxHp),h);
     }
+    // orb glow ring (reads as a collectible)
+    if(e.tag==='orb'){
+      ctx.strokeStyle='rgba(124,255,208,0.5)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r+3, 0, Math.PI*2); ctx.stroke();
+    }
   }
-  // hero HP bar (top)
+
+  // HUD: HP bar (top), energy bar just under it
   ctx.fillStyle='#000'; ctx.fillRect(12,12,VW-24,10);
   ctx.fillStyle='#5ad1ff'; ctx.fillRect(12,12,(VW-24)*(hero.hp/hero.maxHp),10);
+  ctx.fillStyle='#000'; ctx.fillRect(12,24,VW-24,5);
+  ctx.fillStyle='#7cffd0'; ctx.fillRect(12,24,(VW-24)*(hero.energy/hero.maxEnergy),5);
   // wave counter + active weapon
   ctx.fillStyle='#778'; ctx.font='11px monospace'; ctx.textAlign='left';
-  ctx.fillText('WAVE '+round.wave, 12, 36);
+  ctx.fillText('WAVE '+round.wave, 12, 42);
   const aw = hero.weapons[hero.activeWeapon];
   ctx.textAlign='right';
-  ctx.fillText(aw.name.toUpperCase()+' ['+aw.kind+']', VW-12, 36);
+  ctx.fillStyle = aw.kind==='melee' ? '#bcd8ff' : '#fff2a8';
+  ctx.fillText(aw.name.toUpperCase()+' ['+aw.kind+']', VW-12, 42);
 
   if(round.state==='INTERMISSION' && !hero.dead) drawIntermission();
 
@@ -553,6 +667,7 @@ function loop(now){
         sysHeroControl(STEP);
         sysEnemyAI(STEP);
         sysBullets(STEP);
+        sysOrbs(STEP);
         sysCleanup();
       } else { // INTERMISSION: combat paused, just tick the timer
         sysIntermission(STEP);
