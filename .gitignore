@@ -1,0 +1,25 @@
+# dependencies (if any tooling gets added later)
+node_modules/
+
+# build output (none yet, but future-proof)
+dist/
+build/
+
+# environment / secrets — NEVER commit these
+.env
+.env.*
+*.key
+*.pem
+secrets/
+
+# editor / OS junk
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# RL artifacts (later — weights/checkpoints don't belong in git)
+*.onnx
+*.pt
+*.ckpt
+checkpoints/
