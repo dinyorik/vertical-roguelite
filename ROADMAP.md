@@ -41,7 +41,7 @@ Data-driven weapon system (ranged + melee), weapon swap, energy economy (ranged
 costs energy, melee free + blocks bullets, kills drop orbs, ramping passive
 regen). Merged.
 
-### Phase 2 — Mobile control layer (virtual joystick + action buttons)
+### Phase 2 — Mobile control layer (virtual joystick + action buttons)  ✓ DONE
 **Goal:** on-screen touch controls for mobile (the game runs on iPhone Safari
 and currently has only hidden gestures). Desktop keyboard controls stay.
 
@@ -70,7 +70,7 @@ and currently has only hidden gestures). Desktop keyboard controls stay.
   field stays visible) — same canvas drawn last, or a DOM overlay; builder picks.
 - **Deferred:** an on-screen aim stick (we use auto-aim); layout polish/themes.
 
-### Phase 3 — Hero ability: dash
+### Phase 3 — Hero ability: dash  ← NEXT
 **Goal:** one active ability — a dash — on a general ability skeleton.
 
 - **Skeleton:** an ability is DATA on the hero (`{name, cooldown, cooldownLeft,
