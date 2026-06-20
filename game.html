@@ -23,11 +23,16 @@
 //  A hero, an enemy, and a bullet are the SAME thing with
 //  different components. This is the part to understand first.
 //
-//  THIS ITERATION added: a tile-grid map, cover walls (block
-//  movement + bullets), an explicit COMBAT/INTERMISSION round
-//  state machine, a fresh wall layout each wave, and a
-//  between-wave upgrade choice. Enemy AI is still "walk straight
-//  at hero" — pathfinding is deliberately NOT here yet.
+//  Prior iteration: tile-grid map, cover walls, COMBAT/INTERMISSION
+//  wave loop, between-wave upgrade pick.
+//
+//  PHASE 1 (refactor step): shooting is no longer hardcoded on the
+//  hero. A weapon is DATA ({kind, damage, cooldown, manaCost, ...})
+//  and one fire system dispatches on `kind`. The hero holds a
+//  `weapons` array with an active index. Right now only a `ranged`
+//  weapon exists; melee + energy are added next. Projectile params
+//  (size/count/speed) are read from weapon data so later buffs can
+//  modify them at spawn without touching this code.
 // ============================================================
 
 // ---------- Canvas (portrait, fits iPhone) ----------
@@ -202,6 +207,22 @@ addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
 let entities = [];
 const add = e => { entities.push(e); return e; };
 
+// ============================================================
+//  WEAPONS (data-driven)
+//  A weapon is plain data + a `kind`. fireActive() dispatches on
+//  kind. The hero holds an array of weapons and an active index.
+//  Projectile params live on the weapon (not the hero) so a later
+//  buff can change bullet size/count/speed at spawn time.
+// ============================================================
+function makeRanged(){
+  return {
+    kind:'ranged', name:'Blaster',
+    damage:12, cooldown:0.18, cooldownLeft:0,
+    manaCost:6,                       // energy per shot (used once energy exists)
+    bulletSpeed:380, bulletCount:1, spread:0.30, bulletRadius:4,
+  };
+}
+
 // Factory functions build entities by composing components.
 // Components are just data fields — behaviour lives in systems below.
 function makeHero(){
@@ -210,11 +231,8 @@ function makeHero(){
     x:VW/2, y:VH*0.75, r:9,
     vx:0, vy:0, speed:140,
     hp:100, maxHp:100,
-    // weapon stats live on the hero so the between-wave choices
-    // can mutate them and shooting just reads them.
-    fireCooldown:0, fireRate:0.18,   // seconds between shots
-    bulletDmg:12, bulletSpeed:380,
-    bulletCount:1, spread:0.30,      // pellets per shot + fan width (rad)
+    weapons:[ makeRanged() ],         // melee gets pushed in next step
+    activeWeapon:0,
     color:'#5ad1ff', dead:false,
   };
 }
@@ -228,15 +246,48 @@ function makeEnemy(x,y){
     color:'#ff5a78', dead:false,
   };
 }
-function makeBullet(x,y,dx,dy,owner,dmg,speed){
+function makeBullet(x,y,dx,dy,owner,dmg,speed,radius){
   return {
     tag:'bullet',
-    x, y, r:4,
+    x, y, r:radius,
     vx:dx, vy:dy, speed:speed,
     life:1.2,                         // seconds before despawn
     dmg:dmg, owner,
     color: owner==='hero' ? '#fff2a8' : '#ff9a5a', dead:false,
   };
+}
+
+// ---------- Combat helpers ----------
+// Apply damage to an enemy in ONE place, so every damage source
+// (bullets now, melee soon) shares the same death path.
+function hurtEnemy(e, dmg){
+  if (e.dead) return;
+  e.hp -= dmg;
+  if (e.hp <= 0) e.dead = true;
+}
+// Fire the active weapon if its cooldown is ready. Returns nothing;
+// per-kind handlers report whether they actually fired so we only
+// spend the cooldown on a real shot (matters once energy can block).
+function fireActive(){
+  const w = hero.weapons[hero.activeWeapon];
+  if (w.cooldownLeft > 0) return;
+  let fired = false;
+  if (w.kind === 'ranged') fired = fireRanged(w);
+  if (fired) w.cooldownLeft = w.cooldown;
+}
+function fireRanged(w){
+  // auto-aim at nearest enemy (default straight up if none)
+  const target = nearest(hero, 'enemy');
+  let ax=0, ay=-1;
+  if(target){ ax=target.x-hero.x; ay=target.y-hero.y; const l=Math.hypot(ax,ay)||1; ax/=l; ay/=l; }
+  // fan bulletCount pellets across `spread` radians around the aim
+  const base = Math.atan2(ay, ax), n = w.bulletCount;
+  for(let i=0;i<n;i++){
+    const t = n===1 ? 0 : (i/(n-1) - 0.5);   // -0.5..0.5
+    const a = base + t*w.spread;
+    add(makeBullet(hero.x, hero.y, Math.cos(a), Math.sin(a), 'hero', w.damage, w.bulletSpeed, w.bulletRadius));
+  }
+  return true;
 }
 
 // ============================================================
@@ -287,13 +338,14 @@ function spawnWave(n, reachable, hc, hr){
 }
 
 // ---------- Between-wave choices ----------
-// Hardcoded pool. Minimum set per spec: a weapon change and a
-// heal. No currency, no shop — pick one, it applies, next wave.
+// Hardcoded pool. No currency, no shop — pick one, it applies,
+// next wave. Weapon upgrades now target the ranged weapon's data.
+const rangedOf = h => h.weapons.find(w => w.kind === 'ranged');
 const CHOICE_POOL = [
-  { name:'+ Damage',    desc:'+6 bullet damage',   apply:h => h.bulletDmg += 6 },
-  { name:'+ Fire Rate', desc:'20% faster shots',   apply:h => h.fireRate = Math.max(0.05, h.fireRate * 0.8) },
-  { name:'+ Multishot', desc:'+1 pellet per shot', apply:h => { h.bulletCount = Math.min(7, h.bulletCount + 1); h.spread = Math.min(1.0, h.spread + 0.04); } },
-  { name:'Heal',        desc:'restore 40 HP',      apply:h => h.hp = Math.min(h.maxHp, h.hp + 40) },
+  { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => { rangedOf(h).damage += 6; } },
+  { name:'+ Fire Rate', desc:'20% faster ranged',  apply:h => { const w=rangedOf(h); w.cooldown = Math.max(0.05, w.cooldown * 0.8); } },
+  { name:'+ Multishot', desc:'+1 pellet per shot', apply:h => { const w=rangedOf(h); w.bulletCount = Math.min(7, w.bulletCount + 1); w.spread = Math.min(1.0, w.spread + 0.04); } },
+  { name:'Heal',        desc:'restore 40 HP',      apply:h => { h.hp = Math.min(h.maxHp, h.hp + 40); } },
   { name:'+ Vigor',     desc:'+20 max HP & heal',  apply:h => { h.maxHp += 20; h.hp += 20; } },
 ];
 let choices = [];        // the 3 offered this intermission
@@ -334,6 +386,7 @@ function moveWithWalls(e, mx, my, dt){
 
 function sysHeroControl(dt){
   if(hero.dead) return;
+  // movement
   let mx=0, my=0;
   if(keys['a']||keys['arrowleft'])  mx-=1;
   if(keys['d']||keys['arrowright']) mx+=1;
@@ -343,22 +396,10 @@ function sysHeroControl(dt){
   const len = Math.hypot(mx,my);
   if(len>0){ mx/=len; my/=len; moveWithWalls(hero, mx, my, dt); }
 
-  // shooting: aim at nearest enemy, fire on cooldown while holding/keys
-  hero.fireCooldown -= dt;
+  // weapons: tick every weapon's cooldown, fire the active one while held
+  for(const w of hero.weapons) if(w.cooldownLeft > 0) w.cooldownLeft -= dt;
   const shooting = touchMove.active || keys['arrowup']||keys['arrowdown']||keys['arrowleft']||keys['arrowright']||keys[' '];
-  if(shooting && hero.fireCooldown<=0){
-    const target = nearest(hero, 'enemy');
-    let ax=0, ay=-1;                  // default: shoot up
-    if(target){ ax=target.x-hero.x; ay=target.y-hero.y; const l=Math.hypot(ax,ay)||1; ax/=l; ay/=l; }
-    // fan bulletCount pellets across `spread` radians around the aim
-    const base = Math.atan2(ay, ax), n = hero.bulletCount;
-    for(let i=0;i<n;i++){
-      const t = n===1 ? 0 : (i/(n-1) - 0.5);   // -0.5..0.5
-      const a = base + t*hero.spread;
-      add(makeBullet(hero.x, hero.y, Math.cos(a), Math.sin(a), 'hero', hero.bulletDmg, hero.bulletSpeed));
-    }
-    hero.fireCooldown = hero.fireRate;
-  }
+  if(shooting) fireActive();
 }
 
 function sysEnemyAI(dt){
@@ -392,8 +433,7 @@ function sysBullets(dt){
       for(const e of entities){
         if(e.tag!=='enemy'||e.dead) continue;
         if(Math.hypot(b.x-e.x,b.y-e.y) < b.r+e.r){
-          e.hp -= b.dmg; b.dead=true;
-          if(e.hp<=0) e.dead=true;
+          hurtEnemy(e, b.dmg); b.dead=true;
           break;
         }
       }
@@ -465,9 +505,12 @@ function draw(){
   // hero HP bar (top)
   ctx.fillStyle='#000'; ctx.fillRect(12,12,VW-24,10);
   ctx.fillStyle='#5ad1ff'; ctx.fillRect(12,12,(VW-24)*(hero.hp/hero.maxHp),10);
-  // wave counter
+  // wave counter + active weapon
   ctx.fillStyle='#778'; ctx.font='11px monospace'; ctx.textAlign='left';
   ctx.fillText('WAVE '+round.wave, 12, 36);
+  const aw = hero.weapons[hero.activeWeapon];
+  ctx.textAlign='right';
+  ctx.fillText(aw.name.toUpperCase()+' ['+aw.kind+']', VW-12, 36);
 
   if(round.state==='INTERMISSION' && !hero.dead) drawIntermission();
 
