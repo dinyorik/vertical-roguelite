@@ -70,7 +70,7 @@ and currently has only hidden gestures). Desktop keyboard controls stay.
   field stays visible) — same canvas drawn last, or a DOM overlay; builder picks.
 - **Deferred:** an on-screen aim stick (we use auto-aim); layout polish/themes.
 
-### Phase 3 — Hero ability: dash  ← NEXT
+### Phase 3 — Hero ability: dash  ✓ DONE
 **Goal:** one active ability — a dash — on a general ability skeleton.
 
 - **Skeleton:** an ability is DATA on the hero (`{name, cooldown, cooldownLeft,
@@ -90,7 +90,7 @@ and currently has only hidden gestures). Desktop keyboard controls stay.
 - **Deferred:** more abilities; multiple selectable heroes (skeleton supports
   selection — only 1 hero now).
 
-### Phase 4 — Enemy archetypes + brain seam
+### Phase 4 — Enemy archetypes + brain seam  ← NEXT
 **Goal:** 3 enemy types with distinct **dumb** behaviors, and the swappable
 brain that RL later slots into.
 
