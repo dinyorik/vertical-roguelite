@@ -47,9 +47,17 @@ const ctx = canvas.getContext('2d');
 const VW = 360, VH = 640;            // virtual width/height (portrait)
 function fit() {
   const scale = Math.min(window.innerWidth / VW, window.innerHeight / VH);
-  canvas.width = VW; canvas.height = VH;                 // internal pixels
-  canvas.style.width = (VW * scale) + 'px';             // displayed size
+  const dpr = window.devicePixelRatio || 1;
+  // backing buffer at PHYSICAL pixels so high-DPI (retina) screens stay sharp
+  canvas.width  = Math.round(VW * dpr);
+  canvas.height = Math.round(VH * dpr);
+  // displayed (CSS) size is still the fitted logical size — unchanged
+  canvas.style.width  = (VW * scale) + 'px';
   canvas.style.height = (VH * scale) + 'px';
+  // assigning canvas.width/height above RESETS the context transform, so set
+  // the dpr scale once here: all drawing stays in logical VW×VH coords and the
+  // scale never accumulates across resizes.
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 fit(); window.addEventListener('resize', fit);
 
