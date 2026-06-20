@@ -206,6 +206,30 @@ canvas.addEventListener('touchend', e=>{ e.preventDefault();
   touchOrigin=null; touchMove={x:0,y:0,active:false};
 },{passive:false});
 
+// mouse mirrors touch so the game is fully playable on desktop — this is
+// also what makes "tap / click to restart" work with a mouse.
+canvas.addEventListener('mousedown', e=>{
+  const p = toLocal(e);
+  if (hero.dead){ resetWorld(); return; }            // click to restart
+  if (round.state === 'INTERMISSION'){ tapChoice(p.x, p.y); return; }
+  touchOrigin = p; touchMove.active = true;
+  touchStartT = performance.now(); touchDragged = false;
+});
+canvas.addEventListener('mousemove', e=>{
+  if (round.state !== 'COMBAT' || !touchOrigin) return;
+  const p = toLocal(e);
+  let dx = p.x-touchOrigin.x, dy = p.y-touchOrigin.y;
+  const len = Math.hypot(dx,dy)||1;
+  if(len>8) touchDragged = true;
+  if(len>4){ touchMove.x = dx/len; touchMove.y = dy/len; }
+  else { touchMove.x = 0; touchMove.y = 0; }
+});
+window.addEventListener('mouseup', ()=>{   // window: releasing off-canvas still ends the drag
+  if(round.state==='COMBAT' && !hero.dead && !touchDragged && (performance.now()-touchStartT) < 220)
+    swapWeapon();                          // quick still click = swap (mirrors tap)
+  touchOrigin=null; touchMove={x:0,y:0,active:false};
+});
+
 addEventListener('keydown', e=>{
   const k = e.key.toLowerCase();
   keys[k] = true;
@@ -633,7 +657,7 @@ function draw(){
     ctx.fillText('YOU DIED', VW/2, VH/2-10);
     ctx.font='14px monospace';
     ctx.fillText('reached wave '+round.wave, VW/2, VH/2+14);
-    ctx.fillText('tap to restart', VW/2, VH/2+36);
+    ctx.fillText('tap / click / R to restart', VW/2, VH/2+36);
   }
 }
 function drawIntermission(){
