@@ -405,7 +405,6 @@ const rangedOf = h => h.weapons.find(w => w.kind === 'ranged');
 const CHOICE_POOL = [
   { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => { rangedOf(h).damage += 6; } },
   { name:'+ Fire Rate', desc:'20% faster ranged',  apply:h => { const w=rangedOf(h); w.cooldown = Math.max(0.05, w.cooldown * 0.8); } },
-  { name:'+ Multishot', desc:'+1 pellet per shot', apply:h => { const w=rangedOf(h); w.bulletCount = Math.min(7, w.bulletCount + 1); w.spread = Math.min(1.0, w.spread + 0.04); } },
   { name:'Heal',        desc:'restore 40 HP',      apply:h => { h.hp = Math.min(h.maxHp, h.hp + 40); } },
   { name:'+ Vigor',     desc:'+20 max HP & heal',  apply:h => { h.maxHp += 20; h.hp += 20; } },
 ];
