@@ -153,10 +153,10 @@ Building these now is the main risk. Explicitly excluded:
 
 ## 7. Roadmap after this (direction, not tasks)
 
-1. **THIS:** wave loop + tile map + cover walls + between-wave choice.  ← now
+1. **DONE:** wave loop + tile map + cover walls + between-wave choice.
 2. **Enemy attack archetypes** (3): melee charger, ranged kiter, telegraphed
    heavy hitter. This is what gives an agent a real *decision space* — without
-   varied attacks, the optimal enemy policy is trivial and nothing to learn.
+   varied attacks, the optimal enemy policy is trivial and nothing to learn.  ← now
 3. **Distance-as-mechanic + player vulnerability windows** (reload, dash
    cooldown, post-attack recovery) — so positioning matters and an agent has
    something to read and exploit.
