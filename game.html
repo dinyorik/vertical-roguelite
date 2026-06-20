@@ -283,7 +283,10 @@ addEventListener('keydown', e=>{
     else if (k === '3') pickChoice(2);
     return;
   }
-  if (round.state === 'COMBAT' && (k === 'q' || k === 'tab')){ e.preventDefault(); swapWeapon(); }
+  if (round.state === 'COMBAT'){
+    if (k === 'q' || k === 'tab'){ e.preventDefault(); swapWeapon(); }
+    else if (k === 'shift'){ e.preventDefault(); useAbility(); }   // dash
+  }
 });
 addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
 
@@ -314,6 +317,18 @@ function makeMelee(){
     arcRadius:46, arcHalf:1.0,        // reach (px) + half-angle (rad ~57deg each side)
   };
 }
+// Abilities are DATA too (same spirit as weapons), held in hero.ability. Only
+// the dash is populated now; a second ability later = more data + an effect
+// branch in useAbility(). All numbers are tunable placeholders.
+function makeDash(){
+  return {
+    kind:'dash', name:'Dash',
+    cooldown:1.1, cooldownLeft:0,
+    duration:0.14,    // seconds of the high-velocity slide
+    speed:560,        // px/sec while dashing (~4x walk) -> ~78px per dash
+    iframes:0.14,     // invuln window (here = whole dash; tunable)
+  };
+}
 
 // ---------- Energy economy tunables (placeholders — tune by feel) ----------
 const ENERGY_REGEN_BASE = 8;     // energy/sec baseline regen
@@ -334,8 +349,12 @@ function makeHero(){
     energy:100, maxEnergy:100, starveTimer:0,
     weapons:[ makeRanged(), makeMelee() ],
     activeWeapon:0,
-    aimX:0, aimY:-1,                  // last aim direction (melee faces this)
+    aimX:0, aimY:-1,                  // last aim/face direction (melee + dash use this)
     meleeFx:null,                     // transient swing visual {angle,half,radius,t,tMax}
+    lastMoveX:0, lastMoveY:0,         // movement-input dir this frame (dash reads it at trigger)
+    ability:makeDash(),               // single ability slot (data)
+    dashTimer:0, dashX:0, dashY:0, dashSpeed:0,   // active-dash state, locked at trigger
+    invuln:false, invulnTimer:0,      // i-frames; damage sources must check !invuln
     color:'#5ad1ff', dead:false,
   };
 }
@@ -416,10 +435,28 @@ function swapWeapon(){
   if (hero.dead) return;
   hero.activeWeapon = (hero.activeWeapon + 1) % hero.weapons.length;
 }
-// Ability hook — wired to the mobile SKILL button (a desktop key comes in P3).
-// NO-OP placeholder: no ability equipped yet; the dash fills this in Phase 3.
+// Ability hook — wired to the mobile SKILL button and the desktop Shift key.
+// General: if an ability is equipped and ready, run its effect (by kind) and
+// start its cooldown. A second ability later = another kind branch here.
 function useAbility(){
-  // Phase 3: if ability ready -> run effect (dash) -> start its cooldown.
+  const ab = hero.ability;
+  if(!ab || hero.dead || ab.cooldownLeft > 0) return;
+  let used = false;
+  if(ab.kind === 'dash') used = startDash(ab);
+  if(used) ab.cooldownLeft = ab.cooldown;
+}
+// Dash: lock a direction now and slide fast for `duration`. Direction = current
+// movement input if moving, else the aim/face direction. The per-frame movement
+// (and wall collision) happens in sysHeroControl, reusing moveWithWalls.
+function startDash(ab){
+  let dx = hero.lastMoveX, dy = hero.lastMoveY;                // moving? dash where you steer
+  if(dx === 0 && dy === 0){ dx = hero.aimX; dy = hero.aimY; }  // else dash where you face
+  const l = Math.hypot(dx, dy) || 1;
+  hero.dashX = dx/l; hero.dashY = dy/l;                        // locked — no mid-dash steering
+  hero.dashTimer = ab.duration;
+  hero.dashSpeed = ab.speed;
+  hero.invulnTimer = ab.iframes; hero.invuln = ab.iframes > 0;
+  return true;
 }
 
 // ============================================================
@@ -510,10 +547,11 @@ function tapChoice(x, y){
 // ---------- Systems (each runs every frame over the entity list) ----------
 // Move an entity by (mx,my) unit vector, resolving against walls
 // one axis at a time so it slides along cover instead of sticking.
-function moveWithWalls(e, mx, my, dt){
-  const nx = e.x + mx * e.speed * dt;
+function moveWithWalls(e, mx, my, dt, speed){
+  const s = (speed === undefined) ? e.speed : speed;   // dash passes a higher speed
+  const nx = e.x + mx * s * dt;
   if (!circleHitsWall(nx, e.y, e.r)) e.x = nx;
-  const ny = e.y + my * e.speed * dt;
+  const ny = e.y + my * s * dt;
   if (!circleHitsWall(e.x, ny, e.r)) e.y = ny;
 }
 // Fire signal from any frontend: keyboard (arrows/space), the mobile ATTACK
@@ -527,7 +565,11 @@ function firing(){
 
 function sysHeroControl(dt){
   if(hero.dead) return;
-  // movement
+  // ability cooldown + i-frame timers (same pattern as weapon cooldowns)
+  if(hero.ability && hero.ability.cooldownLeft > 0) hero.ability.cooldownLeft -= dt;
+  if(hero.invulnTimer > 0){ hero.invulnTimer -= dt; if(hero.invulnTimer <= 0) hero.invuln = false; }
+
+  // movement input (also the dash's direction source at trigger time)
   let mx=0, my=0;
   if(keys['a']||keys['arrowleft'])  mx-=1;
   if(keys['d']||keys['arrowright']) mx+=1;
@@ -535,7 +577,16 @@ function sysHeroControl(dt){
   if(keys['s']||keys['arrowdown'])  my+=1;
   if(moveVec.active){ mx+=moveVec.x; my+=moveVec.y; }
   const len = Math.hypot(mx,my);
-  if(len>0){ mx/=len; my/=len; moveWithWalls(hero, mx, my, dt); }
+  if(len>0){ mx/=len; my/=len; }
+  hero.lastMoveX = len>0 ? mx : 0; hero.lastMoveY = len>0 ? my : 0;
+
+  if(hero.dashTimer > 0){
+    // DASH overrides normal control: slide along the locked vector (walls respected)
+    hero.dashTimer -= dt;
+    moveWithWalls(hero, hero.dashX, hero.dashY, dt, hero.dashSpeed);
+  } else if(len>0){
+    moveWithWalls(hero, mx, my, dt);
+  }
 
   // aim: track nearest enemy; if none, face the movement direction
   const target = nearest(hero, 'enemy');
@@ -566,7 +617,7 @@ function sysEnemyAI(dt){
     moveWithWalls(e, dx/l, dy/l, dt);
     // contact damage (uses real distance, not the grid)
     e.touchCooldown -= dt;
-    if(!hero.dead && Math.hypot(hero.x-e.x, hero.y-e.y) < e.r+hero.r && e.touchCooldown<=0){
+    if(!hero.dead && !hero.invuln && Math.hypot(hero.x-e.x, hero.y-e.y) < e.r+hero.r && e.touchCooldown<=0){
       hero.hp -= e.touchDmg; e.touchCooldown = 0.6;
       if(hero.hp<=0){ hero.hp=0; hero.dead=true; }
     }
@@ -685,6 +736,11 @@ function draw(){
       ctx.strokeStyle='rgba(124,255,208,0.5)'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r+3, 0, Math.PI*2); ctx.stroke();
     }
+    // i-frame ring while dashing (reads as "can't be hit right now")
+    if(e===hero && hero.invuln){
+      ctx.strokeStyle='rgba(255,255,255,0.8)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(e.x, e.y, e.r+3, 0, Math.PI*2); ctx.stroke();
+    }
   }
 
   // HUD: HP bar (top), energy bar just under it
@@ -699,6 +755,9 @@ function draw(){
   ctx.textAlign='right';
   ctx.fillStyle = aw.kind==='melee' ? '#bcd8ff' : '#fff2a8';
   ctx.fillText(aw.name.toUpperCase()+' ['+aw.kind+']', VW-12, 42);
+  const dab = hero.ability;   // minimal dash-cooldown readout (desktop has no on-screen button)
+  ctx.fillStyle = (dab && dab.cooldownLeft<=0) ? '#7cffd0' : '#5b5b6e';
+  ctx.fillText(dab ? ('DASH '+(dab.cooldownLeft<=0 ? 'READY' : dab.cooldownLeft.toFixed(1)+'s')) : '', VW-12, 56);
 
   if(round.state==='INTERMISSION' && !hero.dead) drawIntermission();
 
@@ -755,7 +814,15 @@ function drawControls(){
     ctx.fillText(b.label, b.x, b.y);
   };
   button(BTN.attack, true, fireHeld);
-  button(BTN.ability, false, false);   // dim: no ability equipped yet (Phase 3 lights it)
+  const ab = hero.ability, abReady = !!ab && ab.cooldownLeft <= 0;
+  button(BTN.ability, abReady, false);   // lit when ready, dim while recharging
+  if(ab && ab.cooldownLeft > 0){         // radial cooldown sweep, shrinks as it recharges
+    const frac = ab.cooldownLeft / ab.cooldown;
+    ctx.globalAlpha = 0.5; ctx.fillStyle = '#0c0c12';
+    ctx.beginPath(); ctx.moveTo(BTN.ability.x, BTN.ability.y);
+    ctx.arc(BTN.ability.x, BTN.ability.y, BTN.ability.r, -Math.PI/2, -Math.PI/2 + Math.PI*2*frac);
+    ctx.closePath(); ctx.fill();
+  }
   button(BTN.swap, true, false);
   ctx.restore();
 }
