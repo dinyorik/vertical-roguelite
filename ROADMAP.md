@@ -50,7 +50,7 @@ General ability slot (data + `useAbility()` dispatch by kind); dash slides via
 `moveWithWalls` (respects cover), brief i-frames gate damage, cooldown-gated.
 SKILL button + Shift. Merged.
 
-### Phase 4 — Enemy archetypes + brain seam   ← NEXT
+### Phase 4 — Enemy archetypes + brain seam   ✓ DONE
 **Goal:** 3 enemy types with distinct **dumb** behaviors, on the swappable brain
 that RL later slots into.
 
@@ -71,7 +71,7 @@ that RL later slots into.
 - **Deferred:** smart/RL brains (the deferred RL phase); bosses; pathfinding —
   enemies still move straight-line and may stick on walls; accepted, not a bug.
 
-### Phase 5 — Wave structure (mini-waves) + scaling
+### Phase 5 — Wave structure (mini-waves) + scaling   ← NEXT
 **Goal:** waves spawn in sub-batches, and get harder with depth. (Pulled forward
 to right after enemy variety — mixed-type batches are far better than batches of
 one enemy.)
