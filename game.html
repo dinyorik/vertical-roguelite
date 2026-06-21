@@ -15,7 +15,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c"></canvas></div>
-<div id="hint">WASD move · arrows/space shoot · Q swap · 1-3 pick &nbsp;·&nbsp; mobile: on-screen controls</div>
+<div id="hint">WASD/arrows move · space shoot · Q swap · Shift dash · 1-3 pick &nbsp;·&nbsp; mobile: on-screen controls</div>
 <script>
 // ============================================================
 //  VERTICAL ROGUELITE — CORE SKELETON
@@ -648,7 +648,7 @@ function moveWithWalls(e, mx, my, dt, speed){
 // button (fireHeld), or a held desktop mouse (after a short delay so a quick
 // click reads as a swap, not a shot).
 function firing(){
-  const kb = keys['arrowup']||keys['arrowdown']||keys['arrowleft']||keys['arrowright']||keys[' '];
+  const kb = keys[' '];   // space shoots on desktop (arrows are movement; auto-aim handles direction)
   const mouseHold = mouseDown && (mouseDragged || (performance.now() - mouseStartT) > 150);
   return kb || fireHeld || mouseHold;
 }
@@ -661,10 +661,10 @@ function sysHeroControl(dt){
 
   // movement input (also the dash's direction source at trigger time)
   let mx=0, my=0;
-  if(keys['a']) mx-=1;   // WASD moves; arrows are the SHOOT control (see firing())
-  if(keys['d']) mx+=1;
-  if(keys['w']) my-=1;
-  if(keys['s']) my+=1;
+  if(keys['a']||keys['arrowleft'])  mx-=1;   // WASD or arrows move
+  if(keys['d']||keys['arrowright']) mx+=1;
+  if(keys['w']||keys['arrowup'])    my-=1;
+  if(keys['s']||keys['arrowdown'])  my+=1;
   if(moveVec.active){ mx+=moveVec.x; my+=moveVec.y; }
   const len = Math.hypot(mx,my);
   if(len>0){ mx/=len; my/=len; }
