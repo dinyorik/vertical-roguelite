@@ -104,7 +104,7 @@ one enemy.)
   swept / segment collision first, or avoid raw-speed buffs. (The "big bullets"
   radius buff is unaffected.)
 
-### Phase 7 — Environment hazards (barrels)   ← NEXT
+### Phase 7 — Environment hazards (barrels)   ✓ DONE
 **Goal:** barrels on the map that produce zones / explosions.
 
 - **Skeleton:** a hazard entity (hittable by bullets) that on trigger produces an
