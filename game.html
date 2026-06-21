@@ -543,11 +543,14 @@ function fireRanged(w){
   const dmg    = modValue(hero, 'bulletDamage', w.damage);
   const radius = modValue(hero, 'bulletRadius', w.bulletRadius);
   const n = Math.max(1, Math.round(modValue(hero, 'bulletCount', w.bulletCount)));
+  const pierce = Math.max(0, Math.round(modValue(hero, 'pierce', 0)));
   const base = Math.atan2(hero.aimY, hero.aimX);
   for(let i=0;i<n;i++){
     const t = n===1 ? 0 : (i/(n-1) - 0.5);   // -0.5..0.5
     const a = base + t*w.spread;
-    add(makeBullet(hero.x, hero.y, Math.cos(a), Math.sin(a), 'hero', dmg, w.bulletSpeed, radius));
+    const b = makeBullet(hero.x, hero.y, Math.cos(a), Math.sin(a), 'hero', dmg, w.bulletSpeed, radius);
+    b.pierce = pierce;                        // extra enemies this bullet passes through
+    add(b);
   }
   return true;
 }
@@ -691,6 +694,7 @@ const CHOICE_POOL = [
   { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => addMod(h, {stat:'bulletDamage', add:6}) },
   { name:'+ Fire Rate', desc:'20% faster ranged',  apply:h => addMod(h, {stat:'fireCooldown', mul:0.8}) },
   { name:'Big Bullets', desc:'+50% bullet size',   apply:h => addMod(h, {stat:'bulletRadius', mul:1.5}) },
+  { name:'Pierce',      desc:'bullets pierce +1',  apply:h => addMod(h, {stat:'pierce', add:1}) },
   { name:'Heal',        desc:'restore 40 HP',      apply:h => { h.hp = Math.min(h.maxHp, h.hp + 40); } },
   { name:'+ Vigor',     desc:'+20 max HP & heal',  apply:h => { h.maxHp += 20; h.hp += 20; } },
 ];
@@ -871,9 +875,12 @@ function sysBullets(dt){
     if(b.owner==='hero'){
       for(const e of entities){
         if(e.tag!=='enemy'||e.dead) continue;
+        if(b.hit && b.hit.includes(e)) continue;        // already pierced this enemy
         if(Math.hypot(b.x-e.x,b.y-e.y) < b.r+e.r){
-          hurtEnemy(e, b.dmg); b.dead=true;
-          break;
+          hurtEnemy(e, b.dmg);
+          (b.hit || (b.hit = [])).push(e);              // remember it so we don't re-hit
+          if(b.pierce > 0){ b.pierce--; }               // pass through, keep flying
+          else { b.dead = true; break; }                // out of pierces -> die
         }
       }
     } else if(b.owner==='enemy'){
