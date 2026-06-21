@@ -570,7 +570,8 @@ const MINIWAVE_DELAY = 1.0;   // seconds of "beat" between mini-wave batches
 const MINIWAVE_MAX   = 5;     // cap on mini-waves per wave
 const HP_SCALE       = 0.15;  // enemy HP growth per wave: 1 + (wave-1)*HP_SCALE
 const round = { state:'COMBAT', timer:0, wave:0,
-                miniWavesTotal:1, miniWaveIndex:0, miniWaveTimer:0, reachable:[] };
+                miniWavesTotal:1, miniWaveIndex:0, miniWaveTimer:0, reachable:[],
+                pendingSpawns:[], pendingHpMult:1 };   // telegraphed next batch
 let hero;
 
 function resetWorld(){
@@ -590,7 +591,8 @@ function startWave(){
   round.miniWavesTotal = Math.min(round.wave + 1, MINIWAVE_MAX);  // grows with depth
   round.miniWaveIndex = 0;
   round.miniWaveTimer = 0;
-  spawnMiniWave();
+  round.pendingSpawns = [];
+  prepareMiniWave();            // telegraph the first batch (markers blink, then spawn)
   round.state = 'COMBAT';
 }
 function enterIntermission(){
@@ -604,27 +606,40 @@ function enterIntermission(){
 }
 // Weighted archetype mix (chargers common, heavy rare).
 const SPAWN_MIX = ['charger','charger','charger','kiter','kiter','heavy'];
-// Spawn ONE mini-wave batch: `count` enemies on reachable floor cells kept away
-// from the hero, each with HP scaled by `hpMult` (depth scaling).
-function spawnBatch(count, hpMult){
+// Choose `count` spawn points (cell centres) on reachable floor far from the
+// hero, each tagged with an archetype. Picked up-front so the batch can be
+// TELEGRAPHED (markers) before the enemies actually appear.
+function pickSpawnCells(count){
   const reachable = round.reachable;
   const hc = cellOf(hero.x), hr = cellOf(hero.y);
   let far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 6);
   if (far.length < count) far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 3);
   if (far.length === 0) far = reachable.slice();
+  const out = [];
   for (let i = 0; i < count; i++){
     const [c, r] = far[ri(far.length)];
     const p = cellCenter(c, r);
-    const e = makeEnemy(p.x, p.y, SPAWN_MIX[ri(SPAWN_MIX.length)]);
-    e.hp = Math.max(1, Math.round(e.hp * hpMult)); e.maxHp = e.hp;   // scale HP, keep bar correct
+    out.push({ x:p.x, y:p.y, kind: SPAWN_MIX[ri(SPAWN_MIX.length)] });
+  }
+  return out;
+}
+// Telegraph the next mini-wave: pick its spawn points NOW and start the beat.
+// Enemies don't exist yet — markers blink at these points during the beat.
+function prepareMiniWave(){
+  const count = 5 + Math.min(3, Math.floor((round.wave - 1) / 2));  // ~constant batch size
+  round.pendingHpMult = 1 + (round.wave - 1) * HP_SCALE;            // depth HP scaling
+  round.pendingSpawns = pickSpawnCells(count);
+  round.miniWaveTimer = MINIWAVE_DELAY;                             // telegraph/beat duration
+}
+// Beat over: spawn the telegraphed batch AT the marked points (HP scaled),
+// then clear the markers.
+function commitMiniWave(){
+  for (const s of round.pendingSpawns){
+    const e = makeEnemy(s.x, s.y, s.kind);
+    e.hp = Math.max(1, Math.round(e.hp * round.pendingHpMult)); e.maxHp = e.hp;
     add(e);
   }
-}
-function spawnMiniWave(){
-  // batch size ~constant (grows a little, capped); enemy HP scales with depth
-  const count  = 5 + Math.min(3, Math.floor((round.wave - 1) / 2));
-  const hpMult = 1 + (round.wave - 1) * HP_SCALE;
-  spawnBatch(count, hpMult);
+  round.pendingSpawns = [];
 }
 
 // ---------- Between-wave choices ----------
@@ -851,19 +866,17 @@ function sysCleanup(){
 // cleared -> go to the intermission (upgrade pick).
 function sysWaves(dt){
   if(round.state!=='COMBAT' || hero.dead) return;
+  if(round.pendingSpawns.length){           // telegraph running -> spawn when the beat ends
+    round.miniWaveTimer -= dt;
+    if(round.miniWaveTimer <= 0) commitMiniWave();
+    return;
+  }
   if(entities.some(e => e.tag==='enemy')) return;          // current batch still alive
   if(round.miniWaveIndex >= round.miniWavesTotal - 1){     // last batch cleared -> wave done
     enterIntermission(); return;
   }
-  if(round.miniWaveTimer <= 0){
-    round.miniWaveTimer = MINIWAVE_DELAY;                  // begin the between-batch beat
-  } else {
-    round.miniWaveTimer -= dt;
-    if(round.miniWaveTimer <= 0){                          // beat over -> next batch
-      round.miniWaveIndex++;
-      spawnMiniWave();
-    }
-  }
+  round.miniWaveIndex++;
+  prepareMiniWave();                         // telegraph the next batch
 }
 
 function sysIntermission(dt){
@@ -961,8 +974,17 @@ function draw(){
   ctx.fillStyle = (dab && dab.cooldownLeft<=0) ? '#7cffd0' : '#5b5b6e';
   ctx.fillText(dab ? ('DASH '+(dab.cooldownLeft<=0 ? 'READY' : dab.cooldownLeft.toFixed(1)+'s')) : '', VW-12, 56);
 
-  // "incoming" cue during the between-batch beat (combat is still active)
-  if(round.state==='COMBAT' && !hero.dead && round.miniWaveTimer > 0){
+  // telegraph: blink a marker at each pending spawn point during the beat, so
+  // the player sees WHERE the next batch will appear before it does.
+  if(round.state==='COMBAT' && !hero.dead && round.pendingSpawns.length){
+    const pulse = 0.35 + 0.45*Math.abs(Math.sin(round.miniWaveTimer*9));
+    ctx.lineWidth = 2;
+    for(const s of round.pendingSpawns){
+      ctx.strokeStyle = 'rgba(255,110,110,'+pulse+')';
+      ctx.beginPath(); ctx.arc(s.x, s.y, HERO_R+5, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,110,110,'+(pulse*0.45)+')';
+      ctx.beginPath(); ctx.arc(s.x, s.y, 3.5, 0, Math.PI*2); ctx.fill();
+    }
     ctx.fillStyle='#ffd86b'; ctx.font='13px monospace'; ctx.textAlign='center';
     ctx.fillText('INCOMING', VW/2, 78);
   }
