@@ -690,6 +690,7 @@ const rangedOf = h => h.weapons.find(w => w.kind === 'ranged');
 const CHOICE_POOL = [
   { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => addMod(h, {stat:'bulletDamage', add:6}) },
   { name:'+ Fire Rate', desc:'20% faster ranged',  apply:h => addMod(h, {stat:'fireCooldown', mul:0.8}) },
+  { name:'Big Bullets', desc:'+50% bullet size',   apply:h => addMod(h, {stat:'bulletRadius', mul:1.5}) },
   { name:'Heal',        desc:'restore 40 HP',      apply:h => { h.hp = Math.min(h.maxHp, h.hp + 40); } },
   { name:'+ Vigor',     desc:'+20 max HP & heal',  apply:h => { h.maxHp += 20; h.hp += 20; } },
 ];
