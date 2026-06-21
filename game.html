@@ -566,23 +566,29 @@ function startDash(ab){
 //  hang off this later.
 // ============================================================
 const INTERMISSION_TIME = 10;
-const round = { state:'COMBAT', timer:0, wave:0 };
+const MINIWAVE_DELAY = 1.0;   // seconds of "beat" between mini-wave batches
+const round = { state:'COMBAT', timer:0, wave:0,
+                miniWavesTotal:1, miniWaveIndex:0, miniWaveTimer:0, reachable:[] };
 let hero;
 
 function resetWorld(){
   entities = [];
   hero = add(makeHero());
   round.wave = 0;
-  startCombat();
+  startWave();
 }
-// Begin a wave: drop everything but the hero, build a fresh map
-// around wherever the hero is standing, spawn enemies on it.
-function startCombat(){
+// Begin a new WAVE: regenerate the map ONCE per wave, set up the mini-wave
+// sub-state, and spawn the first batch. Mini-wave progression and the
+// end-of-wave -> intermission transition live in sysWaves.
+function startWave(){
   round.wave++;
   entities = entities.filter(e => e.tag === 'hero');
   const hc = cellOf(hero.x), hr = cellOf(hero.y);
-  const reachable = generateMap(hc, hr);
-  spawnWave(Math.min(4 + round.wave, 14), reachable, hc, hr);
+  round.reachable = generateMap(hc, hr);        // map stays stable for the whole wave
+  round.miniWavesTotal = 2;                      // fixed for now (depth scaling next)
+  round.miniWaveIndex = 0;
+  round.miniWaveTimer = 0;
+  spawnMiniWave();
   round.state = 'COMBAT';
 }
 function enterIntermission(){
@@ -594,20 +600,26 @@ function enterIntermission(){
   fireHeld = false; attackTouchId = null; mouseDown = false;
   rollChoices();
 }
-// Enemies spawn only on reachable floor cells, kept away from the
-// hero so they don't appear on top of the player.
-// Weighted archetype mix (chargers common, heavy rare). Spawn tuning and
-// mini-waves are the next phase; a random mix is enough now.
+// Weighted archetype mix (chargers common, heavy rare).
 const SPAWN_MIX = ['charger','charger','charger','kiter','kiter','heavy'];
-function spawnWave(n, reachable, hc, hr){
+// Spawn ONE mini-wave batch: `count` enemies on reachable floor cells kept away
+// from the hero, each with HP scaled by `hpMult` (depth scaling).
+function spawnBatch(count, hpMult){
+  const reachable = round.reachable;
+  const hc = cellOf(hero.x), hr = cellOf(hero.y);
   let far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 6);
-  if (far.length < n) far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 3);
+  if (far.length < count) far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 3);
   if (far.length === 0) far = reachable.slice();
-  for (let i = 0; i < n; i++){
+  for (let i = 0; i < count; i++){
     const [c, r] = far[ri(far.length)];
     const p = cellCenter(c, r);
-    add(makeEnemy(p.x, p.y, SPAWN_MIX[ri(SPAWN_MIX.length)]));
+    const e = makeEnemy(p.x, p.y, SPAWN_MIX[ri(SPAWN_MIX.length)]);
+    e.hp = Math.max(1, Math.round(e.hp * hpMult)); e.maxHp = e.hp;   // scale HP, keep bar correct
+    add(e);
   }
+}
+function spawnMiniWave(){
+  spawnBatch(6, 1);   // fixed batch size, no HP scaling yet (depth scaling next)
 }
 
 // ---------- Between-wave choices ----------
@@ -637,7 +649,7 @@ function pickChoice(i){
   const ch = choices[i];
   if (!ch) return;
   ch.apply(hero);
-  startCombat();
+  startWave();
 }
 function tapChoice(x, y){
   for (let i = 0; i < choiceRects.length; i++){
@@ -828,16 +840,30 @@ function sysOrbs(dt){
 
 function sysCleanup(){
   entities = entities.filter(e => !e.dead);
-  // room cleared -> go to the intermission (NOT straight to a new
-  // wave). The state machine owns wave progression now.
-  if(round.state==='COMBAT' && !hero.dead && !entities.some(e=>e.tag==='enemy')){
-    enterIntermission();
+}
+// Mini-wave sequencing inside COMBAT (explicit sub-state, not ad-hoc flags):
+// batch cleared + more left -> spawn next batch after a short beat; last batch
+// cleared -> go to the intermission (upgrade pick).
+function sysWaves(dt){
+  if(round.state!=='COMBAT' || hero.dead) return;
+  if(entities.some(e => e.tag==='enemy')) return;          // current batch still alive
+  if(round.miniWaveIndex >= round.miniWavesTotal - 1){     // last batch cleared -> wave done
+    enterIntermission(); return;
+  }
+  if(round.miniWaveTimer <= 0){
+    round.miniWaveTimer = MINIWAVE_DELAY;                  // begin the between-batch beat
+  } else {
+    round.miniWaveTimer -= dt;
+    if(round.miniWaveTimer <= 0){                          // beat over -> next batch
+      round.miniWaveIndex++;
+      spawnMiniWave();
+    }
   }
 }
 
 function sysIntermission(dt){
   round.timer -= dt;
-  if(round.timer <= 0) startCombat();   // time out -> forfeit the pick
+  if(round.timer <= 0) startWave();   // time out -> forfeit the pick
 }
 
 // helper: nearest entity of a tag
@@ -1012,6 +1038,7 @@ function loop(now){
         sysBullets(STEP);
         sysOrbs(STEP);
         sysCleanup();
+        sysWaves(STEP);
       } else { // INTERMISSION: combat paused, just tick the timer
         sysIntermission(STEP);
       }
