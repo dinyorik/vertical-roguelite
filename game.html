@@ -365,6 +365,18 @@ addEventListener('keydown', e=>{
 });
 addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
 
+// Losing focus mid-press never fires keyup / touchend / mouseup, which would
+// leave the hero stuck moving or firing after you return. Clear ALL held input
+// on blur / tab-hide.
+function clearInput(){
+  for(const k in keys) delete keys[k];
+  moveVec = {x:0, y:0, active:false}; fireHeld = false; attackTouchId = null;
+  JOY.active = false; JOY.id = null;
+  mouseDown = false; mouseOrigin = null;
+}
+addEventListener('blur', clearInput);
+document.addEventListener('visibilitychange', () => { if (document.hidden) clearInput(); });
+
 // ---------- World: just a flat list of entities ----------
 let entities = [];
 const add = e => { entities.push(e); return e; };
