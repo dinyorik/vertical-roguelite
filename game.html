@@ -442,6 +442,7 @@ function makeHero(){
     ability:makeDash(),               // single ability slot (data)
     dashTimer:0, dashX:0, dashY:0, dashSpeed:0,   // active-dash state, locked at trigger
     invuln:false, invulnTimer:0,      // i-frames; damage sources must check !invuln
+    mods:[],                          // active modifiers (buffs now; status/debuffs later)
     color:'#5ad1ff', dead:false,
   };
 }
@@ -490,6 +491,38 @@ function hurtEnemy(e, dmg){
   e.hp -= dmg;
   if (e.hp <= 0){ e.dead = true; spawnEnergyOrb(e.x, e.y); }
 }
+
+// ============================================================
+//  MODIFIER SYSTEM (generic: buffs now, status/debuffs later)
+//  Any entity may carry entity.mods = [ {stat, mul?, add?, duration?, onTick?} ].
+//  Values are read THROUGH modValue at the point of use (never by pre-mutating
+//  base stats), so a buff can affect things that don't exist yet — e.g. a
+//  bullet's radius is computed at spawn from the hero's current mods. The SAME
+//  machinery carries enemy debuffs later (poison = a {stat:'hp', onTick,
+//  duration} mod), so it must stay generic — not hero-only.
+// ============================================================
+function addMod(e, m){ (e.mods || (e.mods = [])).push(m); }
+// Fold matching mods over a base value: apply all `add`s, then all `mul`s.
+function modValue(e, stat, base){
+  let v = base;
+  if (e.mods){
+    for (const m of e.mods) if (m.stat === stat && m.add != null) v += m.add;
+    for (const m of e.mods) if (m.stat === stat && m.mul != null) v *= m.mul;
+  }
+  return v;
+}
+// Tick modifier lifetimes + per-frame effects, drop expired ones. duration
+// omitted = permanent (run-long buff); present = temporary (status/debuff).
+function sysMods(dt){
+  for (const e of entities){
+    if (!e.mods || !e.mods.length) continue;
+    for (const m of e.mods){
+      if (m.onTick) m.onTick(e, dt);
+      if (m.duration != null) m.duration -= dt;
+    }
+    e.mods = e.mods.filter(m => m.duration == null || m.duration > 0);
+  }
+}
 // Fire the active weapon if its cooldown is ready. Per-kind handlers
 // return whether they actually fired, so we only spend the cooldown
 // on a real action (ranged with no energy fires nothing).
@@ -499,17 +532,22 @@ function fireActive(){
   let fired = false;
   if (w.kind === 'ranged') fired = fireRanged(w);
   else if (w.kind === 'melee') fired = fireMelee(w);
-  if (fired) w.cooldownLeft = w.cooldown;
+  if (fired) w.cooldownLeft = (w.kind === 'ranged')
+    ? Math.max(0.05, modValue(hero, 'fireCooldown', w.cooldown))   // fire-rate buffs apply here
+    : w.cooldown;
 }
 function fireRanged(w){
   if (hero.energy < w.manaCost) return false;     // not enough energy -> no shot
   hero.energy -= w.manaCost;
-  // fan bulletCount pellets across `spread` radians around the aim
-  const base = Math.atan2(hero.aimY, hero.aimX), n = w.bulletCount;
+  // bullet params read THROUGH the hero's modifiers at spawn (base = weapon data)
+  const dmg    = modValue(hero, 'bulletDamage', w.damage);
+  const radius = modValue(hero, 'bulletRadius', w.bulletRadius);
+  const n = Math.max(1, Math.round(modValue(hero, 'bulletCount', w.bulletCount)));
+  const base = Math.atan2(hero.aimY, hero.aimX);
   for(let i=0;i<n;i++){
     const t = n===1 ? 0 : (i/(n-1) - 0.5);   // -0.5..0.5
     const a = base + t*w.spread;
-    add(makeBullet(hero.x, hero.y, Math.cos(a), Math.sin(a), 'hero', w.damage, w.bulletSpeed, w.bulletRadius));
+    add(makeBullet(hero.x, hero.y, Math.cos(a), Math.sin(a), 'hero', dmg, w.bulletSpeed, radius));
   }
   return true;
 }
@@ -646,9 +684,12 @@ function commitMiniWave(){
 // Hardcoded pool. No currency, no shop — pick one, it applies,
 // next wave. Weapon upgrades target the ranged weapon's data.
 const rangedOf = h => h.weapons.find(w => w.kind === 'ranged');
+// Upgrades now ADD modifiers (folded in at the point of use) instead of mutating
+// stats. Picks stack. Heal/Vigor stay direct: a one-time heal isn't an ongoing
+// effect, and maxHp is read all over (HP-bar clamp), so it stays a base stat.
 const CHOICE_POOL = [
-  { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => { rangedOf(h).damage += 6; } },
-  { name:'+ Fire Rate', desc:'20% faster ranged',  apply:h => { const w=rangedOf(h); w.cooldown = Math.max(0.05, w.cooldown * 0.8); } },
+  { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => addMod(h, {stat:'bulletDamage', add:6}) },
+  { name:'+ Fire Rate', desc:'20% faster ranged',  apply:h => addMod(h, {stat:'fireCooldown', mul:0.8}) },
   { name:'Heal',        desc:'restore 40 HP',      apply:h => { h.hp = Math.min(h.maxHp, h.hp + 40); } },
   { name:'+ Vigor',     desc:'+20 max HP & heal',  apply:h => { h.maxHp += 20; h.hp += 20; } },
 ];
@@ -1067,6 +1108,7 @@ function loop(now){
     if(!hero.dead){
       if(round.state==='COMBAT'){
         sysHeroControl(STEP);
+        sysMods(STEP);
         sysEnemies(STEP);
         sysBullets(STEP);
         sysOrbs(STEP);
