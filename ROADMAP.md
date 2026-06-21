@@ -71,7 +71,7 @@ that RL later slots into.
 - **Deferred:** smart/RL brains (the deferred RL phase); bosses; pathfinding —
   enemies still move straight-line and may stick on walls; accepted, not a bug.
 
-### Phase 5 — Wave structure (mini-waves) + scaling   ← NEXT
+### Phase 5 — Wave structure (mini-waves) + scaling   ✓ DONE
 **Goal:** waves spawn in sub-batches, and get harder with depth. (Pulled forward
 to right after enemy variety — mixed-type batches are far better than batches of
 one enemy.)
@@ -84,7 +84,7 @@ one enemy.)
   and enemy HP scales with wave number. (Both tunable.)
 - **Deferred:** bosses every N waves, floors-as-rooms — all post-RL.
 
-### Phase 6 — Buff / modifier system
+### Phase 6 — Buff / modifier system   ← NEXT
 **Goal:** richer between-wave upgrades than flat +stat, on general machinery.
 
 - **Skeleton:** modifiers = effects applied to the hero / to derived values,
