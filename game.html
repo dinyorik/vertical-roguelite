@@ -567,6 +567,8 @@ function startDash(ab){
 // ============================================================
 const INTERMISSION_TIME = 10;
 const MINIWAVE_DELAY = 1.0;   // seconds of "beat" between mini-wave batches
+const MINIWAVE_MAX   = 5;     // cap on mini-waves per wave
+const HP_SCALE       = 0.15;  // enemy HP growth per wave: 1 + (wave-1)*HP_SCALE
 const round = { state:'COMBAT', timer:0, wave:0,
                 miniWavesTotal:1, miniWaveIndex:0, miniWaveTimer:0, reachable:[] };
 let hero;
@@ -585,7 +587,7 @@ function startWave(){
   entities = entities.filter(e => e.tag === 'hero');
   const hc = cellOf(hero.x), hr = cellOf(hero.y);
   round.reachable = generateMap(hc, hr);        // map stays stable for the whole wave
-  round.miniWavesTotal = 2;                      // fixed for now (depth scaling next)
+  round.miniWavesTotal = Math.min(round.wave + 1, MINIWAVE_MAX);  // grows with depth
   round.miniWaveIndex = 0;
   round.miniWaveTimer = 0;
   spawnMiniWave();
@@ -619,7 +621,10 @@ function spawnBatch(count, hpMult){
   }
 }
 function spawnMiniWave(){
-  spawnBatch(6, 1);   // fixed batch size, no HP scaling yet (depth scaling next)
+  // batch size ~constant (grows a little, capped); enemy HP scales with depth
+  const count  = 5 + Math.min(3, Math.floor((round.wave - 1) / 2));
+  const hpMult = 1 + (round.wave - 1) * HP_SCALE;
+  spawnBatch(count, hpMult);
 }
 
 // ---------- Between-wave choices ----------
