@@ -96,12 +96,13 @@ one enemy.)
   bullets; multishot already exists).
 - **Reuses:** weapon/projectile output (the combat-core phase) is what modifiers
   hook into.
-- **Collision trigger (code review):** bullet hits are point-sampled per step
-  (fine at ~380px/s, well under the 18px tile). A raw projectile-SPEED buff
-  past ~1000px/s would TUNNEL through walls. If a speed buff is added here,
-  FIRST add swept (segment) collision -- otherwise don't ship raw-speed buffs.
 - **Deferred:** enemy-side debuff *content* — machinery built here, first used by
   the hazards phase.
+- **Known constraint (from code review):** bullet collision is point-sampled per
+  step — fine at current speed, but a raw projectile-SPEED buff past ~1000px/s
+  would tunnel through walls. If adding a speed buff here, switch bullets to
+  swept / segment collision first, or avoid raw-speed buffs. (The "big bullets"
+  radius buff is unaffected.)
 
 ### Phase 7 — Environment hazards (barrels)
 **Goal:** barrels on the map that produce zones / explosions.
@@ -125,11 +126,11 @@ one enemy.)
 - **RL agent** — trained offline by the human, separately, once the game is
   "almost complete" with the dumb scripted brains. Seam built in the
   enemy-archetypes phase; the observation/action/reward interface and inference
-  get added in that later phase.
-  - **Perf trigger (code review):** per-step allocations -- a ctx object per
-    enemy per frame and an entities.filter() each frame -- are negligible
-    in-browser but become GC pressure over millions of headless training
-    steps. Pool/reuse them when building the training loop, not before.
+  get added in that later phase. **Perf note (from code review):** if training
+  runs the JS sim headless in Node (the leaning option), per-step allocations —
+  the per-enemy `ctx` object and `entities.filter()` each frame — become GC
+  pressure over millions of steps; reuse `ctx` and swap-remove instead of filter
+  when building the training loop. Premature to optimize before then.
 - **Bosses.**
 - **Multi-room / dungeon generation / floors going up.**
 - **Multiple selectable heroes** — skeleton ready (the dash/ability phase), 1 now.
