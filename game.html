@@ -433,15 +433,17 @@ function makeHero(){
     color:'#5ad1ff', dead:false,
   };
 }
-function makeEnemy(x,y){
-  return {
-    tag:'enemy',
-    x, y, r:HERO_R,
-    speed:55,
-    hp:30, maxHp:30,
-    touchDmg:10, touchCooldown:0,
-    color:'#ff5a78', dead:false,
-  };
+// An enemy is DATA (stats) + a brain. makeEnemy builds one by kind; the brain
+// decides actions and a system applies them (see the brain seam below).
+function makeEnemy(x, y, kind){
+  const base = { tag:'enemy', kind:kind||'charger', x, y, r:HERO_R, dead:false,
+                 touchCooldown:0, attackCdLeft:0, windupLeft:0 };
+  switch(base.kind){
+    case 'charger': default:
+      // fast, fragile; rushes the hero, deals contact damage
+      return { ...base, kind:'charger', brain:chargerBrain, speed:95,
+               hp:18, maxHp:18, touchDmg:8, color:'#ff5a78' };
+  }
 }
 function makeBullet(x,y,dx,dy,owner,dmg,speed,radius){
   return {
@@ -683,18 +685,43 @@ function sysHeroControl(dt){
   if(firing()) fireActive();
 }
 
-function sysEnemyAI(dt){
+// ---------- Enemy brain seam (decide) + enemy system (act) ----------
+// A brain DECIDES an action {moveX, moveY, attack} from an observation (ctx);
+// it never touches the world. The enemy SYSTEM below APPLIES the action. This
+// (observation -> action) split is exactly the seam an RL policy slots into
+// later with no game rewrite — scripted brains now, same contract.
+function chargerBrain(e, ctx){
+  // rush straight at the hero; contact damage is applied passively by the system
+  return { moveX: ctx.ux, moveY: ctx.uy, attack: false };
+}
+// Execute an enemy's special attack (env side, branches per kind). Charger has
+// none — it uses contact damage. Kiter/heavy plug in here.
+function enemyAttack(e, ctx){
+  // (kiter shot / heavy wind-up added with those archetypes)
+}
+function sysEnemies(dt){
   for(const e of entities){
     if(e.tag!=='enemy'||e.dead) continue;
-    // dumb AI: walk toward hero (no pathfinding yet — getting
-    // stuck on a wall is acceptable for now).
-    let dx=hero.x-e.x, dy=hero.y-e.y; const l=Math.hypot(dx,dy)||1;
-    moveWithWalls(e, dx/l, dy/l, dt);
-    // contact damage (uses real distance, not the grid)
-    e.touchCooldown -= dt;
-    if(!hero.dead && !hero.invuln && Math.hypot(hero.x-e.x, hero.y-e.y) < e.r+hero.r && e.touchCooldown<=0){
-      hero.hp -= e.touchDmg; e.touchCooldown = 0.6;
-      if(hero.hp<=0){ hero.hp=0; hero.dead=true; }
+    // observation: the enemy's view of the world
+    const dx=hero.x-e.x, dy=hero.y-e.y, dist=Math.hypot(dx,dy)||1;
+    const ctx = { hero, dx, dy, dist, ux:dx/dist, uy:dy/dist };
+    if(e.attackCdLeft > 0) e.attackCdLeft -= dt;
+    // DECIDE
+    const act = e.brain(e, ctx);
+    // ACT — movement (straight-line; may stick on walls, accepted)
+    if(act.moveX || act.moveY){
+      const l = Math.hypot(act.moveX, act.moveY) || 1;
+      moveWithWalls(e, act.moveX/l, act.moveY/l, dt);
+    }
+    // ACT — special attack intent (env gates by cooldown, executes per kind)
+    if(act.attack && e.attackCdLeft <= 0) enemyAttack(e, ctx);
+    // passive contact damage (charger), gated on dash i-frames
+    if(e.touchDmg > 0){
+      e.touchCooldown -= dt;
+      if(!hero.dead && !hero.invuln && dist < e.r+hero.r && e.touchCooldown<=0){
+        hero.hp -= e.touchDmg; e.touchCooldown = 0.6;
+        if(hero.hp<=0){ hero.hp=0; hero.dead=true; }
+      }
     }
   }
 }
@@ -912,7 +939,7 @@ function loop(now){
     if(!hero.dead){
       if(round.state==='COMBAT'){
         sysHeroControl(STEP);
-        sysEnemyAI(STEP);
+        sysEnemies(STEP);
         sysBullets(STEP);
         sysOrbs(STEP);
         sysCleanup();
