@@ -439,6 +439,16 @@ function makeEnemy(x, y, kind){
   const base = { tag:'enemy', kind:kind||'charger', x, y, r:HERO_R, dead:false,
                  touchCooldown:0, attackCdLeft:0, windupLeft:0 };
   switch(base.kind){
+    case 'kiter':
+      // medium HP; keeps distance and shoots projectiles at the hero
+      return { ...base, brain:kiterBrain, speed:62, hp:26, maxHp:26, touchDmg:0,
+               preferred:150, shootRange:240, attackCooldown:1.3,
+               shotDmg:7, shotSpeed:210, shotRadius:4, color:'#ffc24a' };
+    case 'heavy':
+      // slow, tanky; telegraphed wind-up then a heavy short-range hit
+      return { ...base, brain:heavyBrain, speed:34, hp:70, maxHp:70, touchDmg:0,
+               windRange:38, attackCooldown:2.2, windup:0.5, hitRange:32,
+               heavyDmg:26, color:'#b06bff' };
     case 'charger': default:
       // fast, fragile; rushes the hero, deals contact damage
       return { ...base, kind:'charger', brain:chargerBrain, speed:95,
@@ -694,10 +704,31 @@ function chargerBrain(e, ctx){
   // rush straight at the hero; contact damage is applied passively by the system
   return { moveX: ctx.ux, moveY: ctx.uy, attack: false };
 }
+function kiterBrain(e, ctx){
+  // hold a preferred distance: back off if too close, approach if too far
+  let mx = 0, my = 0;
+  if(ctx.dist < e.preferred - 8){ mx = -ctx.ux; my = -ctx.uy; }
+  else if(ctx.dist > e.preferred + 8){ mx = ctx.ux; my = ctx.uy; }
+  // request a shot when the hero is in range (the system gates it by cooldown)
+  return { moveX: mx, moveY: my, attack: ctx.dist < e.shootRange };
+}
+function heavyBrain(e, ctx){
+  // approach slowly; request the heavy attack when close. The system plays out
+  // the telegraphed wind-up and the hit; the enemy stands still during wind-up.
+  return { moveX: ctx.ux, moveY: ctx.uy, attack: ctx.dist < e.windRange };
+}
 // Execute an enemy's special attack (env side, branches per kind). Charger has
 // none — it uses contact damage. Kiter/heavy plug in here.
 function enemyAttack(e, ctx){
-  // (kiter shot / heavy wind-up added with those archetypes)
+  if(e.kind === 'kiter'){
+    // fire an enemy bullet straight at the hero (reuses the projectile system)
+    add(makeBullet(e.x, e.y, ctx.ux, ctx.uy, 'enemy', e.shotDmg, e.shotSpeed, e.shotRadius));
+    e.attackCdLeft = e.attackCooldown;
+  } else if(e.kind === 'heavy'){
+    // begin the telegraphed wind-up; the system delivers the hit when it ends
+    e.windupLeft = e.windup;
+    e.attackCdLeft = e.attackCooldown;   // cooldown counts from wind-up start
+  }
 }
 function sysEnemies(dt){
   for(const e of entities){
@@ -706,6 +737,17 @@ function sysEnemies(dt){
     const dx=hero.x-e.x, dy=hero.y-e.y, dist=Math.hypot(dx,dy)||1;
     const ctx = { hero, dx, dy, dist, ux:dx/dist, uy:dy/dist };
     if(e.attackCdLeft > 0) e.attackCdLeft -= dt;
+    // heavy: committed telegraphed wind-up -> hit (player reads it and dodges)
+    if(e.windupLeft > 0){
+      e.windupLeft -= dt;
+      if(e.windupLeft <= 0){
+        const d = Math.hypot(hero.x-e.x, hero.y-e.y);
+        if(!hero.dead && !hero.invuln && d < e.hitRange){
+          hero.hp -= e.heavyDmg; if(hero.hp<=0){ hero.hp=0; hero.dead=true; }
+        }
+      }
+      continue;   // committed during wind-up: no movement or new decision
+    }
     // DECIDE
     const act = e.brain(e, ctx);
     // ACT — movement (straight-line; may stick on walls, accepted)
@@ -744,6 +786,12 @@ function sysBullets(dt){
           hurtEnemy(e, b.dmg); b.dead=true;
           break;
         }
+      }
+    } else if(b.owner==='enemy'){
+      // enemy bullets hit the hero, gated on dash i-frames (melee also blocks them)
+      if(!hero.dead && !hero.invuln && Math.hypot(b.x-hero.x, b.y-hero.y) < b.r+hero.r){
+        hero.hp -= b.dmg; b.dead = true;
+        if(hero.hp<=0){ hero.hp=0; hero.dead=true; }
       }
     }
   }
@@ -832,6 +880,12 @@ function draw(){
       const w=22, h=3, x=e.x-w/2, y=e.y-e.r-7;
       ctx.fillStyle='#000'; ctx.fillRect(x,y,w,h);
       ctx.fillStyle='#ff5a78'; ctx.fillRect(x,y,w*(e.hp/e.maxHp),h);
+      // heavy wind-up telegraph: a growing red ring the player reads and dodges
+      if(e.windupLeft > 0){
+        const f = 1 - e.windupLeft/e.windup;
+        ctx.strokeStyle = 'rgba(255,70,70,'+(0.4+0.5*f)+')'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 3 + 10*f, 0, Math.PI*2); ctx.stroke();
+      }
     }
     // orb glow ring (reads as a collectible)
     if(e.tag==='orb'){
