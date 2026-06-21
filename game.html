@@ -952,7 +952,7 @@ function draw(){
   ctx.fillStyle='#7cffd0'; ctx.fillRect(12,24,(VW-24)*(hero.energy/hero.maxEnergy),5);
   // wave counter + active weapon
   ctx.fillStyle='#778'; ctx.font='11px monospace'; ctx.textAlign='left';
-  ctx.fillText('WAVE '+round.wave, 12, 42);
+  ctx.fillText('WAVE '+round.wave+' · '+(round.miniWaveIndex+1)+'/'+round.miniWavesTotal, 12, 42);
   const aw = hero.weapons[hero.activeWeapon];
   ctx.textAlign='right';
   ctx.fillStyle = aw.kind==='melee' ? '#bcd8ff' : '#fff2a8';
@@ -960,6 +960,12 @@ function draw(){
   const dab = hero.ability;   // minimal dash-cooldown readout (desktop has no on-screen button)
   ctx.fillStyle = (dab && dab.cooldownLeft<=0) ? '#7cffd0' : '#5b5b6e';
   ctx.fillText(dab ? ('DASH '+(dab.cooldownLeft<=0 ? 'READY' : dab.cooldownLeft.toFixed(1)+'s')) : '', VW-12, 56);
+
+  // "incoming" cue during the between-batch beat (combat is still active)
+  if(round.state==='COMBAT' && !hero.dead && round.miniWaveTimer > 0){
+    ctx.fillStyle='#ffd86b'; ctx.font='13px monospace'; ctx.textAlign='center';
+    ctx.fillText('INCOMING', VW/2, 78);
+  }
 
   if(round.state==='INTERMISSION' && !hero.dead) drawIntermission();
 
