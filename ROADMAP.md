@@ -96,6 +96,10 @@ one enemy.)
   bullets; multishot already exists).
 - **Reuses:** weapon/projectile output (the combat-core phase) is what modifiers
   hook into.
+- **Collision trigger (code review):** bullet hits are point-sampled per step
+  (fine at ~380px/s, well under the 18px tile). A raw projectile-SPEED buff
+  past ~1000px/s would TUNNEL through walls. If a speed buff is added here,
+  FIRST add swept (segment) collision -- otherwise don't ship raw-speed buffs.
 - **Deferred:** enemy-side debuff *content* — machinery built here, first used by
   the hazards phase.
 
@@ -122,6 +126,10 @@ one enemy.)
   "almost complete" with the dumb scripted brains. Seam built in the
   enemy-archetypes phase; the observation/action/reward interface and inference
   get added in that later phase.
+  - **Perf trigger (code review):** per-step allocations -- a ctx object per
+    enemy per frame and an entities.filter() each frame -- are negligible
+    in-browser but become GC pressure over millions of headless training
+    steps. Pool/reuse them when building the training loop, not before.
 - **Bosses.**
 - **Multi-room / dungeon generation / floors going up.**
 - **Multiple selectable heroes** — skeleton ready (the dash/ability phase), 1 now.
