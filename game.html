@@ -584,6 +584,9 @@ function enterIntermission(){
 }
 // Enemies spawn only on reachable floor cells, kept away from the
 // hero so they don't appear on top of the player.
+// Weighted archetype mix (chargers common, heavy rare). Spawn tuning and
+// mini-waves are the next phase; a random mix is enough now.
+const SPAWN_MIX = ['charger','charger','charger','kiter','kiter','heavy'];
 function spawnWave(n, reachable, hc, hr){
   let far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 6);
   if (far.length < n) far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 3);
@@ -591,7 +594,7 @@ function spawnWave(n, reachable, hc, hr){
   for (let i = 0; i < n; i++){
     const [c, r] = far[ri(far.length)];
     const p = cellCenter(c, r);
-    add(makeEnemy(p.x, p.y));
+    add(makeEnemy(p.x, p.y, SPAWN_MIX[ri(SPAWN_MIX.length)]));
   }
 }
 
