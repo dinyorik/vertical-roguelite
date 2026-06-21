@@ -533,6 +533,10 @@ const BARREL_HP = 1;             // hit-triggered
 const EXPLOSION_RADIUS = 64;     // px
 const EXPLOSION_DMG = 40;
 const BARREL_MIN = 2, BARREL_MAX = 4;
+const GAS_RADIUS = 46;           // poison cloud size (px)
+const GAS_DURATION = 4;          // cloud lifetime (s)
+const POISON_DURATION = 1.2;     // poison lingers this long after leaving the cloud
+const POISON_DPS = 12;           // poison damage per second
 function makeBarrel(x, y, kind){
   return { tag:'barrel', kind, x, y, r:9, hp:BARREL_HP, dead:false,
            color: kind==='red' ? '#d9534f' : '#5db85c' };
@@ -549,7 +553,7 @@ function placeBarrels(){
   for (let i = 0; i < n && far.length; i++){
     const [c, r] = far.splice(ri(far.length), 1)[0];   // unique cells
     const p = cellCenter(c, r);
-    add(makeBarrel(p.x, p.y, 'red'));                   // green kind added next
+    add(makeBarrel(p.x, p.y, Math.random() < 0.5 ? 'red' : 'green'));
   }
 }
 // Damage a barrel; at 0 HP it triggers its effect once.
@@ -563,6 +567,7 @@ function triggerBarrel(bar){
   if (bar.dead) return;
   bar.dead = true;                       // mark first so chains don't re-trigger it
   if (bar.kind === 'red') explodeBarrel(bar);
+  else if (bar.kind === 'green') spawnGasZone(bar.x, bar.y);
 }
 // Red: instant AoE — hero (unless i-framed), enemies (via hurtEnemy so death +
 // orb work), and other barrels (chain reaction). Faction-neutral.
@@ -576,11 +581,33 @@ function explodeBarrel(bar){
     else if (e.tag === 'barrel') damageBarrel(e, EXPLOSION_DMG);   // chain
   }
 }
-// Hazard upkeep each frame: explosion-fx lifetimes (gas added next).
+// Green: a poison gas zone. Entities inside get a poison MODIFIER via the
+// existing modifier system (the payoff of the buff/modifier phase) — refreshed
+// (not stacked) while they stand in it; it expires `POISON_DURATION` after they
+// leave. Poison routes through the proper death path (hurtEnemy / hero death).
+function spawnGasZone(x, y){ add({ tag:'gas', x, y, r:GAS_RADIUS, t:GAS_DURATION, dead:false }); }
+function poisonTick(e, dt){
+  const dmg = POISON_DPS * dt;
+  if (e.tag === 'enemy') hurtEnemy(e, dmg);                 // death + energy-orb drop
+  else if (e === hero && !hero.dead){ hero.hp -= dmg; if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; } }
+  // ticks regardless of i-frames — an already-applied status isn't dodged by dashing
+}
+function applyPoison(e){
+  const cur = e.mods && e.mods.find(m => m.kind === 'poison');
+  if (cur) cur.duration = POISON_DURATION;                  // refresh, do NOT stack
+  else addMod(e, { kind:'poison', stat:'hp', duration:POISON_DURATION, onTick:poisonTick });
+}
+// Hazard upkeep each frame: gas-zone lifetimes (poison those inside) + fx.
 function sysHazards(dt){
   for (const z of entities){
     if (z.dead) continue;
-    if (z.tag === 'fx'){ z.t -= dt; if (z.t <= 0) z.dead = true; }
+    if (z.tag === 'gas'){
+      z.t -= dt; if (z.t <= 0){ z.dead = true; continue; }
+      for (const e of entities){
+        if (e.dead) continue;
+        if ((e.tag === 'enemy' || e === hero) && Math.hypot(e.x-z.x, e.y-z.y) < z.r + e.r) applyPoison(e);
+      }
+    } else if (z.tag === 'fx'){ z.t -= dt; if (z.t <= 0) z.dead = true; }
   }
 }
 // ---------- hazard rendering ----------
@@ -594,6 +621,13 @@ function drawFx(e){
   const a = e.t / e.tMax;
   ctx.strokeStyle = 'rgba(255,170,60,'+a+')'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(e.x, e.y, e.maxR*(1-a), 0, Math.PI*2); ctx.stroke();
+}
+function drawGas(z){
+  const a = Math.min(1, z.t/0.8) * 0.30;     // fade out over the last ~0.8s
+  ctx.fillStyle = 'rgba(95,200,95,'+a+')';
+  ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(130,235,130,'+(a+0.08)+')'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(z.x, z.y, z.r, 0, Math.PI*2); ctx.stroke();
 }
 // Fire the active weapon if its cooldown is ready. Per-kind handlers
 // return whether they actually fired, so we only spend the cooldown
@@ -1058,8 +1092,10 @@ function draw(){
     ctx.closePath(); ctx.fill();
   }
 
+  for(const z of entities){ if(z.tag==='gas' && !z.dead) drawGas(z); }   // clouds under the actors
   for(const e of entities){
     if(e.tag==='barrel'){ drawBarrel(e); continue; }
+    if(e.tag==='gas') continue;          // drawn above (under actors)
     if(e.tag==='fx'){ drawFx(e); continue; }
     ctx.fillStyle = e.color;
     ctx.beginPath();
