@@ -84,7 +84,7 @@ one enemy.)
   and enemy HP scales with wave number. (Both tunable.)
 - **Deferred:** bosses every N waves, floors-as-rooms — all post-RL.
 
-### Phase 6 — Buff / modifier system   ← NEXT
+### Phase 6 — Buff / modifier system   ✓ DONE
 **Goal:** richer between-wave upgrades than flat +stat, on general machinery.
 
 - **Skeleton:** modifiers = effects applied to the hero / to derived values,
@@ -104,7 +104,7 @@ one enemy.)
   swept / segment collision first, or avoid raw-speed buffs. (The "big bullets"
   radius buff is unaffected.)
 
-### Phase 7 — Environment hazards (barrels)
+### Phase 7 — Environment hazards (barrels)   ← NEXT
 **Goal:** barrels on the map that produce zones / explosions.
 
 - **Skeleton:** a hazard entity (hittable by bullets) that on trigger produces an
