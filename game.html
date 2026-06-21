@@ -523,6 +523,78 @@ function sysMods(dt){
     e.mods = e.mods.filter(m => m.duration == null || m.duration > 0);
   }
 }
+
+// ============================================================
+//  ENVIRONMENT HAZARDS (barrels) — faction-neutral props on the floor.
+//  No brain, don't block movement; a bullet (any owner) or an explosion
+//  triggers them. Red = AoE explosion (chains). Green (next) = poison gas.
+// ============================================================
+const BARREL_HP = 1;             // hit-triggered
+const EXPLOSION_RADIUS = 64;     // px
+const EXPLOSION_DMG = 40;
+const BARREL_MIN = 2, BARREL_MAX = 4;
+function makeBarrel(x, y, kind){
+  return { tag:'barrel', kind, x, y, r:9, hp:BARREL_HP, dead:false,
+           color: kind==='red' ? '#d9534f' : '#5db85c' };
+}
+function spawnFx(x, y, maxR){ add({ tag:'fx', x, y, t:0.25, tMax:0.25, maxR }); }
+// Place a few barrels on reachable floor cells, away from the hero (reuses the
+// same reachable-cell placement as obstacles/enemies). Called once per wave.
+function placeBarrels(){
+  const reachable = round.reachable;
+  const hc = cellOf(hero.x), hr = cellOf(hero.y);
+  let far = reachable.filter(([c,r]) => Math.hypot(c-hc, r-hr) >= 5);
+  if (far.length === 0) far = reachable.slice();
+  const n = BARREL_MIN + ri(BARREL_MAX - BARREL_MIN + 1);
+  for (let i = 0; i < n && far.length; i++){
+    const [c, r] = far.splice(ri(far.length), 1)[0];   // unique cells
+    const p = cellCenter(c, r);
+    add(makeBarrel(p.x, p.y, 'red'));                   // green kind added next
+  }
+}
+// Damage a barrel; at 0 HP it triggers its effect once.
+function damageBarrel(bar, dmg){
+  if (bar.dead) return;
+  bar.hp -= dmg;
+  if (bar.hp <= 0) triggerBarrel(bar);
+}
+// Per-kind effect dispatch (light skeleton; a third kind = one more branch).
+function triggerBarrel(bar){
+  if (bar.dead) return;
+  bar.dead = true;                       // mark first so chains don't re-trigger it
+  if (bar.kind === 'red') explodeBarrel(bar);
+}
+// Red: instant AoE — hero (unless i-framed), enemies (via hurtEnemy so death +
+// orb work), and other barrels (chain reaction). Faction-neutral.
+function explodeBarrel(bar){
+  spawnFx(bar.x, bar.y, EXPLOSION_RADIUS);
+  for (const e of entities){
+    if (e.dead) continue;
+    if (Math.hypot(e.x-bar.x, e.y-bar.y) > EXPLOSION_RADIUS) continue;
+    if (e.tag === 'enemy') hurtEnemy(e, EXPLOSION_DMG);
+    else if (e === hero){ if (!hero.invuln){ hero.hp -= EXPLOSION_DMG; if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; } } }
+    else if (e.tag === 'barrel') damageBarrel(e, EXPLOSION_DMG);   // chain
+  }
+}
+// Hazard upkeep each frame: explosion-fx lifetimes (gas added next).
+function sysHazards(dt){
+  for (const z of entities){
+    if (z.dead) continue;
+    if (z.tag === 'fx'){ z.t -= dt; if (z.t <= 0) z.dead = true; }
+  }
+}
+// ---------- hazard rendering ----------
+function drawBarrel(e){
+  const s = e.r * 1.5;
+  ctx.fillStyle = e.color; ctx.fillRect(e.x-s/2, e.y-s/2, s, s);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.strokeRect(e.x-s/2, e.y-s/2, s, s);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(e.x-s/2, e.y-2, s, 4);
+}
+function drawFx(e){
+  const a = e.t / e.tMax;
+  ctx.strokeStyle = 'rgba(255,170,60,'+a+')'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.maxR*(1-a), 0, Math.PI*2); ctx.stroke();
+}
 // Fire the active weapon if its cooldown is ready. Per-kind handlers
 // return whether they actually fired, so we only spend the cooldown
 // on a real action (ranged with no energy fires nothing).
@@ -629,6 +701,7 @@ function startWave(){
   entities = entities.filter(e => e.tag === 'hero');
   const hc = cellOf(hero.x), hr = cellOf(hero.y);
   round.reachable = generateMap(hc, hr);        // map stays stable for the whole wave
+  placeBarrels();                               // a few hittable hazards on the map
   round.miniWavesTotal = Math.min(round.wave + 1, MINIWAVE_MAX);  // grows with depth
   round.miniWaveIndex = 0;
   round.miniWaveTimer = 0;
@@ -871,6 +944,13 @@ function sysBullets(dt){
     // walls are cover: a bullet that steps into a wall cell dies.
     // Per-step cell check (no raycast) is enough — step << tile.
     if(isWallPx(b.x, b.y)){ b.dead=true; continue; }
+    // bullets of ANY owner can hit barrels (props on the floor, not walls)
+    let hitBarrel = false;
+    for(const k of entities){
+      if(k.tag!=='barrel' || k.dead) continue;
+      if(Math.hypot(b.x-k.x, b.y-k.y) < b.r+k.r){ damageBarrel(k, b.dmg); b.dead=true; hitBarrel=true; break; }
+    }
+    if(hitBarrel) continue;
     // collision: hero bullets hit enemies
     if(b.owner==='hero'){
       for(const e of entities){
@@ -979,6 +1059,8 @@ function draw(){
   }
 
   for(const e of entities){
+    if(e.tag==='barrel'){ drawBarrel(e); continue; }
+    if(e.tag==='fx'){ drawFx(e); continue; }
     ctx.fillStyle = e.color;
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.r, 0, Math.PI*2);
@@ -1120,6 +1202,7 @@ function loop(now){
         sysEnemies(STEP);
         sysBullets(STEP);
         sysOrbs(STEP);
+        sysHazards(STEP);
         sysCleanup();
         sysWaves(STEP);
       } else { // INTERMISSION: combat paused, just tick the timer
