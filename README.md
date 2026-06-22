@@ -1,28 +1,29 @@
 # Vertical Roguelite (working title TBD)
 
-A top-down roguelite shooter in the spirit of Soul Knight — waves, cover walls,
-between-wave upgrades — built as a **single HTML file** with plain JS and canvas.
-Portrait format, runs in the browser (works on iPhone Safari) with no build step.
+Top-down roguelite shooter (Soul Knight-ish): waves, cover, enemy archetypes,
+dash, upgrades, hazards. Plain JS + canvas as **native ES modules**, no build step.
+Portrait; runs in the browser incl. iPhone Safari.
 
 ## Run it
 
-Open `game.html` in any modern browser, or in Safari on iPhone. There is no build
-step, no dependencies, and no server — just open the file.
+Native ES modules must be served over **http(s)** — they do NOT load from `file://`.
+
+- **Desktop (local):** from the repo root, run a static server, then open the URL:
+  `python3 -m http.server`  ->  http://localhost:8000
+- **Mobile (iPhone Safari):** open the GitHub Pages URL:
+  https://dinyorik.github.io/vertical-roguelite/
+  One-time setup: repo **Settings -> Pages -> Source: Deploy from branch `main` (/root)**.
+
+Double-clicking `index.html` from disk will NOT work (file:// blocks modules) — expected.
 
 ## Controls
+- **Desktop:** WASD/arrows move - space shoot - Q swap - Shift dash - 1-3 pick - R/click restart.
+- **Mobile:** on-screen joystick + FIRE / SKILL (dash) / SWAP buttons; tap to pick/restart.
 
-- **Move:** drag anywhere / `WASD`
-- **Shoot:** hold (touch) / arrow keys — auto-aims at the nearest enemy
-- **Pick upgrade:** tap a card / number keys `1`–`3` (during the between-wave intermission)
-- **Restart after death:** tap / `R`
-
-## Status
-
-Roadmap item 1 — *wave loop + tile map + cover walls + between-wave choice* — **done**.
-Next up: item 2 (enemy attack archetypes).
+## Structure
+`index.html` + `src/` ES modules: constants, state, canvas, grid, entities,
+modifiers, weapons, abilities, enemies, hazards, combat, input, waves, render, main.
+Shared mutable state lives in `src/state.js`.
 
 ## More
-
-`PROJECT.md` is the source of truth for scope, architecture decisions, the RL
-vision, and the full roadmap — including what is deliberately **out of scope**.
-Read it before extending the project.
+`PROJECT.md` = vision / architecture / scope. `ROADMAP.md` = phase plan + status.
