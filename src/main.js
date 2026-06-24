@@ -6,7 +6,7 @@ import { hero, round, keys, inp } from './state.js';
 import { moveWithWalls } from './grid.js';
 import { fireActive, rangedOf } from './weapons.js';
 import { firing } from './input.js';
-import { nearest, sysBullets, sysOrbs, sysCleanup } from './combat.js';
+import { nearest, sysBullets, sysPickups, sysCleanup } from './combat.js';
 import { sysEnemies } from './enemies.js';
 import { sysMods } from './modifiers.js';
 import { sysHazards } from './hazards.js';
@@ -66,7 +66,7 @@ function loop(now){
         sysMods(STEP);
         sysEnemies(STEP);
         sysBullets(STEP);
-        sysOrbs(STEP);
+        sysPickups(STEP);
         sysHazards(STEP);
         sysCleanup();
         sysWaves(STEP);

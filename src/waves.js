@@ -33,7 +33,10 @@ export function startWave(){
 function enterIntermission(){
   round.state = 'INTERMISSION';
   round.timer = INTERMISSION_TIME;
-  setEntities(entities.filter(e => e.tag !== 'bullet' && e.tag !== 'orb'));
+  // sweep uncollected coins into the wallet (kills near wave-end shouldn't be
+  // lost to the magnet's reach), then clear transient world entities.
+  for (const e of entities) if (e.tag === 'pickup' && e.kind === 'coin' && !e.dead) hero.coins += e.value;
+  setEntities(entities.filter(e => e.tag !== 'bullet' && e.tag !== 'pickup'));
   inp.moveX = 0; inp.moveY = 0; inp.moveActive = false; inp.fireHeld = false;
   inp.attackId = null; inp.mouseDown = false;
   JOY.active = false; JOY.id = null;

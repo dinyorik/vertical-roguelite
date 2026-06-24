@@ -55,8 +55,9 @@ export function draw(){
         ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 3 + 10*f, 0, Math.PI*2); ctx.stroke();
       }
     }
-    if (e.tag === 'orb'){
-      ctx.strokeStyle = 'rgba(124,255,208,0.5)'; ctx.lineWidth = 2;
+    if (e.tag === 'pickup'){   // gold ring for coins, teal for energy orbs
+      ctx.strokeStyle = e.kind === 'coin' ? 'rgba(255,211,77,0.55)' : 'rgba(124,255,208,0.5)';
+      ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r+3, 0, Math.PI*2); ctx.stroke();
     }
     if (e === hero && hero.invuln){
@@ -72,6 +73,11 @@ export function draw(){
   ctx.fillStyle = '#7cffd0'; ctx.fillRect(12, 24, (VW-24)*(hero.energy/hero.maxEnergy), 5);
   ctx.fillStyle = '#778'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
   ctx.fillText('WAVE '+round.wave+' · '+(round.miniWaveIndex+1)+'/'+round.miniWavesTotal, 12, 42);
+  // coin wallet: gold dot + count, under the wave label
+  ctx.fillStyle = '#ffd34d';
+  ctx.beginPath(); ctx.arc(16, 53, 4, 0, Math.PI*2); ctx.fill();
+  ctx.textAlign = 'left'; ctx.font = '11px monospace';
+  ctx.fillText(String(hero.coins), 25, 57);
   const aw = hero.weapons[hero.activeWeapon];
   ctx.textAlign = 'right';
   ctx.fillStyle = aw.kind === 'melee' ? '#bcd8ff' : '#fff2a8';

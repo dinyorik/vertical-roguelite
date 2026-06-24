@@ -41,13 +41,16 @@ export function sysBullets(dt){
   }
 }
 
-export function sysOrbs(dt){
+// Pickups (energy orbs + coins) share the magnet/collect path; the KIND decides
+// where the value goes on contact: energy -> hero.energy, coin -> hero.coins.
+export function sysPickups(dt){
   for (const o of entities){
-    if (o.tag !== 'orb' || o.dead) continue;
+    if (o.tag !== 'pickup' || o.dead) continue;
     const dx = hero.x - o.x, dy = hero.y - o.y, d = Math.hypot(dx, dy) || 1;
     if (d < ORB_MAGNET){ o.x += (dx/d) * ORB_PULL * dt; o.y += (dy/d) * ORB_PULL * dt; }
     if (d < hero.r + o.r + 2){
-      hero.energy = Math.min(hero.maxEnergy, hero.energy + o.value);
+      if (o.kind === 'coin') hero.coins += o.value;
+      else hero.energy = Math.min(hero.maxEnergy, hero.energy + o.value);
       o.dead = true;
     }
   }

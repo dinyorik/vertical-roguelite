@@ -2,7 +2,7 @@
 // spawnEnergyOrb) — low in the graph — so both combat.js and hazards.js can use
 // it without a combat<->hazards import cycle. makeEnemy lives in enemies.js
 // (next to its brains) to avoid an entities<->enemies cycle.
-import { VW, VH, HERO_R, ORB_VALUE } from './constants.js';
+import { VW, VH, HERO_R, ORB_VALUE, COIN_VALUE } from './constants.js';
 import { add } from './state.js';
 
 // ---- weapons & ability are DATA ----
@@ -34,6 +34,7 @@ export function makeHero(){
     vx:0, vy:0, speed:140,
     hp:100, maxHp:100,
     energy:100, maxEnergy:100, starveTimer:0,
+    coins:0,                                  // wallet (Phase 8 shop currency)
     weapons:[ makeRanged(), makeMelee() ],
     activeWeapon:0,
     aimX:0, aimY:-1,
@@ -58,14 +59,21 @@ export function makeBullet(x, y, dx, dy, owner, dmg, speed, radius){
   };
 }
 
-export function spawnEnergyOrb(x, y){
-  add({ tag:'orb', x, y, r:5, value:ORB_VALUE, dead:false, color:'#7cffd0' });
+// Pickups: ONE entity, two kinds. energy -> hero.energy, coin -> hero.coins
+// (sorted out in sysPickups). Same magnet/collect path for both, so coins reuse
+// the orb plumbing rather than duplicating it.
+export function makePickup(x, y, kind){
+  return kind === 'coin'
+    ? { tag:'pickup', kind:'coin',   x, y, r:5, value:COIN_VALUE, dead:false, color:'#ffd34d' }
+    : { tag:'pickup', kind:'energy', x, y, r:5, value:ORB_VALUE,  dead:false, color:'#7cffd0' };
 }
+export function spawnEnergyOrb(x, y){ add(makePickup(x, y, 'energy')); }
+export function spawnCoin(x, y){ add(makePickup(x, y, 'coin')); }
 
 // Apply damage to an enemy in ONE place so every source (bullets, melee,
-// explosion, poison) shares the death path incl. dropping an energy orb.
+// explosion, poison) shares the death path: drop an energy orb AND a coin.
 export function hurtEnemy(e, dmg){
   if (e.dead) return;
   e.hp -= dmg;
-  if (e.hp <= 0){ e.dead = true; spawnEnergyOrb(e.x, e.y); }
+  if (e.hp <= 0){ e.dead = true; spawnEnergyOrb(e.x, e.y); spawnCoin(e.x, e.y); }
 }

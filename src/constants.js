@@ -17,8 +17,9 @@ export const ENERGY_REGEN_BASE = 8;    // energy/sec baseline regen
 export const ENERGY_REGEN_RAMP = 14;   // extra energy/sec per second starved
 export const ENERGY_REGEN_MAX  = 70;   // cap on regen rate
 export const ORB_VALUE = 10;           // energy per pickup
-export const ORB_MAGNET = 46;          // px: orbs within this drift to hero
-export const ORB_PULL   = 170;         // px/sec orb drift speed
+export const ORB_MAGNET = 46;          // px: pickups within this drift to hero
+export const ORB_PULL   = 170;         // px/sec pickup drift speed
+export const COIN_VALUE = 2;           // coins dropped per enemy kill (wallet currency)
 
 // ---- Environment hazards (barrels) ----
 export const BARREL_HP = 1;            // hit-triggered
