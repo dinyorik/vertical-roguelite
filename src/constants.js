@@ -32,10 +32,15 @@ export const POISON_DURATION = 1.2;    // poison lingers this long after leaving
 export const POISON_DPS = 12;          // poison damage per second
 
 // ---- Round / waves ----
-export const INTERMISSION_TIME = 10;
+export const INTERMISSION_TIME = 30;   // generous: shopping takes time; NEXT button advances early
 export const MINIWAVE_DELAY = 1.0;     // beat between mini-wave batches
 export const MINIWAVE_MAX   = 5;       // cap on mini-waves per wave
 export const HP_SCALE       = 0.15;    // enemy HP growth per wave: 1 + (wave-1)*HP_SCALE
+
+// ---- Shop / economy ----
+// price = ceil( SHOP_BASE[category] * SHOP_RATIO^(wave-1) ). Tuned by feel.
+export const SHOP_BASE  = { potion: 12, perk: 28 };   // weapons join (priciest) in Phase 9
+export const SHOP_RATIO = 1.25;
 
 // ---- Math helpers ----
 export const ri = n => Math.floor(Math.random() * n);   // random int 0..n-1

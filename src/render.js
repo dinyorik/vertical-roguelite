@@ -5,7 +5,7 @@ import { ctx } from './canvas.js';
 import { grid } from './grid.js';
 import { drawBarrel, drawFx, drawGas } from './hazards.js';
 import { BTN, TOUCH } from './input.js';
-import { choiceRects } from './waves.js';
+import { choiceRects, shopRects, nextRect } from './waves.js';
 
 function rrect(x, y, w, h, rad){
   ctx.beginPath();
@@ -115,21 +115,57 @@ export function draw(){
 }
 
 function drawIntermission(){
-  ctx.fillStyle = 'rgba(8,8,12,0.62)'; ctx.fillRect(0, 0, VW, VH);
+  ctx.fillStyle = 'rgba(8,8,12,0.72)'; ctx.fillRect(0, 0, VW, VH);
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff'; ctx.font = '16px monospace';
-  ctx.fillText('WAVE '+round.wave+' CLEARED', VW/2, 110);
-  ctx.fillStyle = '#8a8aa0'; ctx.font = '12px monospace';
-  ctx.fillText('choose one  ·  '+Math.ceil(round.timer)+'s', VW/2, 134);
+  ctx.fillText('WAVE '+round.wave+' CLEARED', VW/2, 50);
+  ctx.font = '12px monospace';
+  ctx.fillStyle = '#ffd34d'; ctx.fillText('coins  '+hero.coins, VW/2, 72);
+  ctx.fillStyle = '#8a8aa0'; ctx.fillText('next in '+Math.ceil(round.timer)+'s', VW/2, 90);
+
+  // ---- free mini-pick (1 of 3); chosen one stays lit, the rest dim ----
+  ctx.textAlign = 'left'; ctx.font = '11px monospace'; ctx.fillStyle = '#9fd6ff';
+  ctx.fillText(round.freePicked ? 'FREE PICK - chosen' : 'FREE PICK - choose 1', 20, 110);
   choiceRects.forEach((cr, i) => {
+    const picked = cr.choice.picked;
+    ctx.globalAlpha = (round.freePicked && !picked) ? 0.4 : 1;
     ctx.fillStyle = '#1c1c28'; rrect(cr.x, cr.y, cr.w, cr.h, 8); ctx.fill();
-    ctx.strokeStyle = '#3a3a4f'; ctx.lineWidth = 1.5; rrect(cr.x, cr.y, cr.w, cr.h, 8); ctx.stroke();
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#5ad1ff'; ctx.font = '14px monospace';
-    ctx.fillText((i+1)+'.  '+cr.choice.name, cr.x+14, cr.y+25);
-    ctx.fillStyle = '#aab'; ctx.font = '11px monospace';
-    ctx.fillText(cr.choice.desc, cr.x+14, cr.y+44);
+    ctx.strokeStyle = picked ? '#7cffd0' : '#3a3a4f'; ctx.lineWidth = picked ? 2 : 1.5;
+    rrect(cr.x, cr.y, cr.w, cr.h, 8); ctx.stroke();
+    ctx.fillStyle = '#cfe8ff'; ctx.font = '13px monospace';
+    ctx.fillText((picked ? '* ' : (i+1)+'. ') + cr.choice.name, cr.x+12, cr.y+20);
+    ctx.fillStyle = '#aab'; ctx.font = '10px monospace';
+    ctx.fillText(cr.choice.desc, cr.x+12, cr.y+37);
+    ctx.globalAlpha = 1;
   });
+
+  // ---- paid shop (buy any you can afford; sold-out + unaffordable are marked) ----
+  ctx.fillStyle = '#ffd34d'; ctx.font = '11px monospace';
+  ctx.fillText('SHOP - buy with coins', 20, 308);
+  shopRects.forEach((sr) => {
+    const it = sr.item, afford = !it.sold && hero.coins >= it.price;
+    ctx.globalAlpha = it.sold ? 0.4 : 1;
+    ctx.fillStyle = '#231c12'; rrect(sr.x, sr.y, sr.w, sr.h, 8); ctx.fill();
+    ctx.strokeStyle = afford ? '#ffd34d' : '#4a4636'; ctx.lineWidth = afford ? 2 : 1.5;
+    rrect(sr.x, sr.y, sr.w, sr.h, 8); ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffe9a8'; ctx.font = '13px monospace';
+    ctx.fillText(it.name, sr.x+12, sr.y+20);
+    ctx.fillStyle = '#b9a87f'; ctx.font = '10px monospace';
+    ctx.fillText(it.desc, sr.x+12, sr.y+38);
+    ctx.textAlign = 'right'; ctx.font = '12px monospace';
+    ctx.fillStyle = it.sold ? '#7a7a7a' : (afford ? '#ffd34d' : '#c46b6b');
+    ctx.fillText(it.sold ? 'SOLD' : (it.price + 'c'), sr.x+sr.w-12, sr.y+30);
+    ctx.globalAlpha = 1;
+  });
+
+  // ---- NEXT WAVE button ----
+  const nr = nextRect;
+  ctx.fillStyle = '#1d2a1d'; rrect(nr.x, nr.y, nr.w, nr.h, 8); ctx.fill();
+  ctx.strokeStyle = '#5fc85f'; ctx.lineWidth = 2; rrect(nr.x, nr.y, nr.w, nr.h, 8); ctx.stroke();
+  ctx.fillStyle = '#bdf0bd'; ctx.font = '14px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('NEXT WAVE >', nr.x+nr.w/2, nr.y+nr.h/2+5);
+  ctx.textAlign = 'left';
 }
 
 // On-screen mobile controls overlay (touch devices, during combat).

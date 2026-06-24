@@ -8,6 +8,7 @@ import { makeHero } from './entities.js';
 import { makeEnemy } from './enemies.js';
 import { placeBarrels } from './hazards.js';
 import { addMod } from './modifiers.js';
+import { rollShop, shopItems, buyShop } from './shop.js';
 
 export function resetWorld(){
   setEntities([]);
@@ -40,7 +41,10 @@ function enterIntermission(){
   inp.moveX = 0; inp.moveY = 0; inp.moveActive = false; inp.fireHeld = false;
   inp.attackId = null; inp.mouseDown = false;
   JOY.active = false; JOY.id = null;
-  rollChoices();
+  round.freePicked = false;        // fresh free pick each intermission
+  rollChoices();                   // free mini-pick (3 of 4 small upgrades)
+  rollShop(round.wave);            // paid shop (3 random, priced for this wave)
+  layoutIntermission();            // build tap rects for both tracks + NEXT
 }
 
 // ---- spawning ----
@@ -76,36 +80,52 @@ function commitMiniWave(){
   round.pendingSpawns = [];
 }
 
-// ---- between-wave choices (each pick ADDS a modifier; heal/vigor stay direct) ----
-const CHOICE_POOL = [
-  { name:'+ Damage',    desc:'+6 ranged damage',   apply:h => addMod(h, {stat:'bulletDamage', add:6}) },
-  { name:'+ Fire Rate', desc:'20% faster ranged',  apply:h => addMod(h, {stat:'fireCooldown', mul:0.8}) },
-  { name:'Big Bullets', desc:'+50% bullet size',   apply:h => addMod(h, {stat:'bulletRadius', mul:1.5}) },
-  { name:'Pierce',      desc:'bullets pierce +1',  apply:h => addMod(h, {stat:'pierce', add:1}) },
-  { name:'Heal',        desc:'restore 40 HP',      apply:h => { h.hp = Math.min(h.maxHp, h.hp + 40); } },
-  { name:'+ Vigor',     desc:'+20 max HP & heal',  apply:h => { h.maxHp += 20; h.hp += 20; } },
+// ---- between-wave: free mini-pick (small) + paid shop (shop.js) ----
+// The free pick is the SMALL reward (pick 1 of 3); real power is bought. Picking
+// the free upgrade NO LONGER starts the wave — the player shops, then taps NEXT
+// WAVE (or the generous timer forfeits the unpicked free mini, like before).
+// Big bullets / fire-rate / multishot / pierce moved OUT to the shop (perks).
+const MINI_POOL = [
+  { name:'Heal',         desc:'restore 30 HP',        apply:h => { h.hp = Math.min(h.maxHp, h.hp + 30); } },
+  { name:'+ Damage',     desc:'+4 ranged damage',     apply:h => addMod(h, {stat:'bulletDamage', add:4}) },
+  { name:'+ Max HP',     desc:'+12 max HP & heal',    apply:h => { h.maxHp += 12; h.hp += 12; } },
+  { name:'+ Max Energy', desc:'+15 max energy & top', apply:h => { h.maxEnergy += 15; h.energy += 15; } },
 ];
 export let choices = [];
 export let choiceRects = [];
+export let shopRects = [];
+export const nextRect = { x:(VW-180)/2, y:540, w:180, h:46 };
+
 function rollChoices(){
-  const pool = CHOICE_POOL.slice();
+  const pool = MINI_POOL.slice();
   choices = [];
+  // shallow-copy each pick so the per-roll `picked` flag never leaks back to MINI_POOL
   for (let i = 0; i < 3 && pool.length; i++)
-    choices.push(pool.splice(ri(pool.length), 1)[0]);
-  choiceRects = choices.map((ch, i) => ({ x:28, y:170 + i*74, w:VW-56, h:60, choice:ch }));
+    choices.push({ ...pool.splice(ri(pool.length), 1)[0] });
 }
+// Build tap rects for both tracks; shopRects embed the live shopItems objects so
+// the renderer and purchase logic share one source of truth (sold flag, price).
+function layoutIntermission(){
+  choiceRects = choices.map((ch, i) => ({ x:20, y:120 + i*54, w:VW-40, h:46, choice:ch }));
+  shopRects   = shopItems.map((it, i) => ({ x:20, y:320 + i*60, w:VW-40, h:54, item:it }));
+}
+
 export function pickChoice(i){
-  if (round.state !== 'INTERMISSION') return;
+  if (round.state !== 'INTERMISSION' || round.freePicked) return;
   const ch = choices[i];
   if (!ch) return;
   ch.apply(hero);
-  startWave();
+  ch.picked = true;
+  round.freePicked = true;           // one free pick; does NOT advance the wave
+}
+export function nextWave(){
+  if (round.state === 'INTERMISSION') startWave();
 }
 export function tapChoice(x, y){
-  for (let i = 0; i < choiceRects.length; i++){
-    const c = choiceRects[i];
-    if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h){ pickChoice(i); return; }
-  }
+  const hit = r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  if (hit(nextRect)){ nextWave(); return; }
+  for (let i = 0; i < choiceRects.length; i++) if (hit(choiceRects[i])){ pickChoice(i); return; }
+  for (let i = 0; i < shopRects.length; i++)   if (hit(shopRects[i])){ buyShop(i); return; }
 }
 
 // ---- sequencing systems ----

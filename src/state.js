@@ -15,6 +15,7 @@ export const round = {
   state:'COMBAT', timer:0, wave:0,
   miniWavesTotal:1, miniWaveIndex:0, miniWaveTimer:0, reachable:[],
   pendingSpawns:[], pendingHpMult:1,          // telegraphed next batch
+  freePicked:false,                           // free mini-pick taken this intermission
 };
 
 // ---- input signals (DATA only; the DOM handlers live in input.js) ----

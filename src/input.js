@@ -7,7 +7,7 @@ import { keys, inp, JOY, hero, round } from './state.js';
 import { canvas } from './canvas.js';
 import { swapWeapon } from './weapons.js';
 import { useAbility } from './abilities.js';
-import { resetWorld, tapChoice, pickChoice } from './waves.js';
+import { resetWorld, tapChoice, pickChoice, nextWave } from './waves.js';
 
 export const TOUCH = (typeof window !== 'undefined') &&
   (('ontouchstart' in window) || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
@@ -88,9 +88,10 @@ addEventListener('keydown', e=>{
   keys[k] = true;
   if (hero.dead && k === 'r'){ resetWorld(); return; }
   if (round.state === 'INTERMISSION'){
-    if (k === '1') pickChoice(0);
+    if (k === '1') pickChoice(0);            // free mini-pick
     else if (k === '2') pickChoice(1);
     else if (k === '3') pickChoice(2);
+    else if (k === 'enter' || k === ' ') nextWave();   // proceed (shop is click/tap)
     return;
   }
   if (round.state === 'COMBAT'){
