@@ -46,7 +46,15 @@ testing (a URL instead of AirDropping a file), a local static server for desktop
 Shared mutable state (`entities`, `hero`, `round`, `ctx`) gets one home; watch for
 circular imports. (Full detail in the split work order.)
 
-### Phase 8 — Currency + shop
+### Phase 8 — Currency + shop — ✓ DONE (merged)
+> Built: coins drop from every enemy via a generalized pickup (energy|coin) over
+> the orb magnet/collect path + wallet + coin HUD; uncollected coins swept to the
+> wallet at wave end. Intermission split into a free mini-pick (3 of 4 small
+> upgrades, pick 1) + a paid shop (`shop.js`: data items w/ category, geometric
+> price, apply; perks via addMod + instant potions) with a NEXT WAVE button.
+> New perks: Swift (moveSpeed), Poison/Blast immunity (checked at damage sites).
+> Tunables in constants.js (COIN_VALUE, SHOP_BASE, SHOP_RATIO, INTERMISSION_TIME=30).
+> Verified headless in Node (59 checks). Shop pool is ready to stock weapons (P9).
 - Coins drop from enemies (reuse the orb/magnet pattern); a wallet + coin HUD.
 - Restructure the between-wave INTERMISSION into TWO tracks:
   - **Free mini-pick** (1 of 3, kept SMALL): heal, +small damage, +small max-HP,
@@ -59,7 +67,7 @@ circular imports. (Full detail in the split work order.)
 - Note: big bullets + fire-rate move OUT of the (now mini) free pick INTO paid
   perks; the free pick narrows to the four mini upgrades above.
 
-### Phase 9 — New weapon types
+### Phase 9 — New weapon types — NEXT
 - Four buyable weapons (sold in the shop): **laser** (one long straight beam),
   **shotgun** (wide spread, short range), **bow** (charge-up: hold to charge
   through ~5 VISIBLE ticks, release to fire; longer hold = more damage + accuracy),

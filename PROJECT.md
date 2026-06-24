@@ -155,7 +155,7 @@ Building these now is the main risk. Explicitly excluded:
 
 > ⚠ Superseded by ROADMAP.md — see it for the detailed phases and live status.
 > Done so far: this section's item 1, plus Phase 1 (combat core: weapons /
-> melee / swap / energy) and Phase 2 (mobile control layer), Phase 3 (dash), Phase 4 (enemy archetypes), Phase 5 (mini-waves), Phase 6 (buffs/modifiers), Phase 7 (hazards) + the ES-module split. Current: Phase 8 (currency/shop).
+> melee / swap / energy) and Phase 2 (mobile control layer), Phase 3 (dash), Phase 4 (enemy archetypes), Phase 5 (mini-waves), Phase 6 (buffs/modifiers), Phase 7 (hazards) + the ES-module split, Phase 8 (currency + shop). Current: Phase 9 (new weapon types).
 
 1. **DONE:** wave loop + tile map + cover walls + between-wave choice.
 2. **Enemy attack archetypes** (3): melee charger, ranged kiter, telegraphed
