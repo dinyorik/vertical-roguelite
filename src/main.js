@@ -8,7 +8,7 @@ import { fireActive, rangedOf } from './weapons.js';
 import { firing } from './input.js';
 import { nearest, sysBullets, sysPickups, sysCleanup } from './combat.js';
 import { sysEnemies } from './enemies.js';
-import { sysMods } from './modifiers.js';
+import { sysMods, modValue } from './modifiers.js';
 import { sysHazards } from './hazards.js';
 import { resetWorld, sysWaves, sysIntermission } from './waves.js';
 import { draw } from './render.js';
@@ -34,7 +34,7 @@ function sysHeroControl(dt){
     hero.dashTimer -= dt;
     moveWithWalls(hero, hero.dashX, hero.dashY, dt, hero.dashSpeed);
   } else if (len > 0){
-    moveWithWalls(hero, mx, my, dt);
+    moveWithWalls(hero, mx, my, dt, modValue(hero, 'moveSpeed', hero.speed));  // Swift perk
   }
 
   // aim: nearest enemy, else movement direction

@@ -16,6 +16,12 @@ const SHOP_POOL = [
   { name:'Faster Fire',  desc:'15% faster ranged', category:'perk', apply:h => addMod(h, {stat:'fireCooldown', mul:0.85}) },
   { name:'Multishot',    desc:'+1 bullet',          category:'perk', apply:h => addMod(h, {stat:'bulletCount', add:1}) },
   { name:'Pierce',       desc:'bullets pierce +1',  category:'perk', apply:h => addMod(h, {stat:'pierce', add:1}) },
+  { name:'Swift',        desc:'+15% move speed',    category:'perk', apply:h => addMod(h, {stat:'moveSpeed', mul:1.15}) },
+  // immunities are one-of (ownedStat -> not re-offered once held); checked at the damage sites
+  { name:'Poison Immune', desc:'ignore poison gas', category:'perk', ownedStat:'poisonImmune',
+    apply:h => addMod(h, {stat:'poisonImmune', add:1}) },
+  { name:'Blast Immune',  desc:'ignore explosions', category:'perk', ownedStat:'explosionImmune',
+    apply:h => addMod(h, {stat:'explosionImmune', add:1}) },
   // potions — instant one-time effects
   { name:'Full Heal',    desc:'restore all HP',     category:'potion', apply:h => { h.hp = h.maxHp; } },
   { name:'Full Energy',  desc:'restore all energy', category:'potion', apply:h => { h.energy = h.maxEnergy; } },
