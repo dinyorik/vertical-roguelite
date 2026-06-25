@@ -47,14 +47,17 @@ Shared mutable state (`entities`, `hero`, `round`, `ctx`) gets one home; watch f
 circular imports. (Full detail in the split work order.)
 
 ### Phase 8 — Currency + shop — ✓ DONE (merged)
-> Built: coins drop from every enemy via a generalized pickup (energy|coin) over
-> the orb magnet/collect path + wallet + coin HUD; uncollected coins swept to the
-> wallet at wave end. Intermission split into a free mini-pick (3 of 4 small
-> upgrades, pick 1) + a paid shop (`shop.js`: data items w/ category, geometric
-> price, apply; perks via addMod + instant potions) with a NEXT WAVE button.
-> New perks: Swift (moveSpeed), Poison/Blast immunity (checked at damage sites).
-> Tunables in constants.js (COIN_VALUE, SHOP_BASE, SHOP_RATIO, INTERMISSION_TIME=30).
-> Verified headless in Node (59 checks). Shop pool is ready to stock weapons (P9).
+> Built: every enemy drops a coin (spinning, strong magnet) AND grants energy
+> INSTANTLY on the kill with a cosmetic drain fx (the ball-in-ring "energy" model
+> flying enemy->hero) — energy is no longer a ground pickup. Wallet + coin HUD;
+> uncollected coins swept to the wallet at wave end. Intermission split into a free
+> mini-pick (3 of 4 small upgrades, pick 1) + a paid shop (`shop.js`: data items w/
+> category, geometric price, apply; perks via addMod + instant potions; offers are
+> distinct) with a NEXT WAVE button. New perks: Swift (moveSpeed), Poison/Blast
+> immunity (checked at damage sites). Opaque top HUD band so HP/energy don't clash
+> with the field; hero blinks white on damage via one hurtHero() damage path.
+> Tunables in constants.js (COIN_*, ENERGY_PER_KILL, SHOP_*, INTERMISSION_TIME=30,
+> HURT_FLASH). Verified headless in Node (65 checks). Shop ready to stock weapons (P9).
 - Coins drop from enemies (reuse the orb/magnet pattern); a wallet + coin HUD.
 - Restructure the between-wave INTERMISSION into TWO tracks:
   - **Free mini-pick** (1 of 3, kept SMALL): heal, +small damage, +small max-HP,
