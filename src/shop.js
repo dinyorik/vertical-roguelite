@@ -37,8 +37,8 @@ export let shopItems = [];   // the 3 rolled offers for the current intermission
 export function rollShop(wave){
   const pool = SHOP_POOL.filter(it => !(it.ownedStat && modValue(hero, it.ownedStat, 0) > 0));
   shopItems = [];
-  for (let i = 0; i < 3; i++){
-    const t = pool[ri(pool.length)];
+  for (let i = 0; i < 3 && pool.length; i++){
+    const t = pool.splice(ri(pool.length), 1)[0];   // distinct: no duplicate offers in one shop
     shopItems.push({ name:t.name, desc:t.desc, category:t.category,
                      price: priceOf(t.category, wave), apply:t.apply, sold:false });
   }
