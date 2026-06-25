@@ -1,9 +1,9 @@
 // Bullets, orbs, cleanup, nearest-target. Hero bullets hit enemies (pierce);
 // enemy bullets hit the hero (i-frame gated); ANY bullet pops barrels.
-import { ORB_MAGNET, ORB_PULL } from './constants.js';
+import { COIN_MAGNET, COIN_PULL, COIN_SPIN } from './constants.js';
 import { entities, hero, setEntities } from './state.js';
 import { isWallPx } from './grid.js';
-import { hurtEnemy } from './entities.js';
+import { hurtEnemy, hurtHero } from './entities.js';
 import { damageBarrel } from './hazards.js';
 
 export function sysBullets(dt){
@@ -34,25 +34,31 @@ export function sysBullets(dt){
       }
     } else if (b.owner === 'enemy'){
       if (!hero.dead && !hero.invuln && Math.hypot(b.x-hero.x, b.y-hero.y) < b.r + hero.r){
-        hero.hp -= b.dmg; b.dead = true;
-        if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; }
+        hurtHero(b.dmg); b.dead = true;
       }
     }
   }
 }
 
-// Pickups (energy orbs + coins) share the magnet/collect path; the KIND decides
-// where the value goes on contact: energy -> hero.energy, coin -> hero.coins.
+// Coins: spin (cosmetic), magnet toward the hero, collect into the wallet.
 export function sysPickups(dt){
   for (const o of entities){
     if (o.tag !== 'pickup' || o.dead) continue;
+    o.spin += COIN_SPIN * dt;
     const dx = hero.x - o.x, dy = hero.y - o.y, d = Math.hypot(dx, dy) || 1;
-    if (d < ORB_MAGNET){ o.x += (dx/d) * ORB_PULL * dt; o.y += (dy/d) * ORB_PULL * dt; }
-    if (d < hero.r + o.r + 2){
-      if (o.kind === 'coin') hero.coins += o.value;
-      else hero.energy = Math.min(hero.maxEnergy, hero.energy + o.value);
-      o.dead = true;
-    }
+    if (d < COIN_MAGNET){ o.x += (dx/d) * COIN_PULL * dt; o.y += (dy/d) * COIN_PULL * dt; }
+    if (d < hero.r + o.r + 2){ hero.coins += o.value; o.dead = true; }
+  }
+}
+
+// Energy-drain fx: eases toward the hero and fades (energy already credited on kill).
+export function sysDrains(dt){
+  for (const o of entities){
+    if (o.tag !== 'drain' || o.dead) continue;
+    const k = Math.min(1, 12 * dt);
+    o.x += (hero.x - o.x) * k; o.y += (hero.y - o.y) * k;
+    o.t -= dt;
+    if (o.t <= 0) o.dead = true;
   }
 }
 

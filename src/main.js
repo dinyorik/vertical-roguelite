@@ -6,7 +6,7 @@ import { hero, round, keys, inp } from './state.js';
 import { moveWithWalls } from './grid.js';
 import { fireActive, rangedOf } from './weapons.js';
 import { firing } from './input.js';
-import { nearest, sysBullets, sysPickups, sysCleanup } from './combat.js';
+import { nearest, sysBullets, sysPickups, sysDrains, sysCleanup } from './combat.js';
 import { sysEnemies } from './enemies.js';
 import { sysMods, modValue } from './modifiers.js';
 import { sysHazards } from './hazards.js';
@@ -18,6 +18,7 @@ function sysHeroControl(dt){
   // ability cooldown + i-frame timers
   if (hero.ability && hero.ability.cooldownLeft > 0) hero.ability.cooldownLeft -= dt;
   if (hero.invulnTimer > 0){ hero.invulnTimer -= dt; if (hero.invulnTimer <= 0) hero.invuln = false; }
+  if (hero.hurtFlash > 0) hero.hurtFlash -= dt;
 
   // movement input (also the dash's direction source at trigger time)
   let mx = 0, my = 0;
@@ -67,6 +68,7 @@ function loop(now){
         sysEnemies(STEP);
         sysBullets(STEP);
         sysPickups(STEP);
+        sysDrains(STEP);
         sysHazards(STEP);
         sysCleanup();
         sysWaves(STEP);

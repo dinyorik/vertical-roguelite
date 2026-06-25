@@ -1,9 +1,9 @@
-// Entity factories + the shared enemy-damage helper. hurtEnemy lives HERE (with
-// spawnEnergyOrb) — low in the graph — so both combat.js and hazards.js can use
-// it without a combat<->hazards import cycle. makeEnemy lives in enemies.js
-// (next to its brains) to avoid an entities<->enemies cycle.
-import { VW, VH, HERO_R, ORB_VALUE, COIN_VALUE } from './constants.js';
-import { add } from './state.js';
+// Entity factories + the shared damage helpers. hurtEnemy AND hurtHero live HERE
+// — low in the graph — so combat.js and hazards.js share the one death/damage path
+// without a combat<->hazards import cycle. makeEnemy lives in enemies.js (next to
+// its brains) to avoid an entities<->enemies cycle.
+import { VW, VH, HERO_R, COIN_VALUE, ENERGY_PER_KILL, DRAIN_TIME, HURT_FLASH } from './constants.js';
+import { add, hero } from './state.js';
 
 // ---- weapons & ability are DATA ----
 export function makeRanged(){
@@ -43,6 +43,7 @@ export function makeHero(){
     ability:makeDash(),
     dashTimer:0, dashX:0, dashY:0, dashSpeed:0,
     invuln:false, invulnTimer:0,
+    hurtFlash:0,                              // >0 = blinking from a recent hit
     mods:[],
     color:'#5ad1ff', dead:false,
   };
@@ -59,21 +60,34 @@ export function makeBullet(x, y, dx, dy, owner, dmg, speed, radius){
   };
 }
 
-// Pickups: ONE entity, two kinds. energy -> hero.energy, coin -> hero.coins
-// (sorted out in sysPickups). Same magnet/collect path for both, so coins reuse
-// the orb plumbing rather than duplicating it.
-export function makePickup(x, y, kind){
-  return kind === 'coin'
-    ? { tag:'pickup', kind:'coin',   x, y, r:5, value:COIN_VALUE, dead:false, color:'#ffd34d' }
-    : { tag:'pickup', kind:'energy', x, y, r:5, value:ORB_VALUE,  dead:false, color:'#7cffd0' };
+// Coins are the ONLY ground drop. `spin` is a cosmetic phase advanced in sysPickups.
+export function makeCoin(x, y){
+  return { tag:'pickup', kind:'coin', x, y, r:6, value:COIN_VALUE, dead:false, spin:Math.random()*Math.PI*2 };
 }
-export function spawnEnergyOrb(x, y){ add(makePickup(x, y, 'energy')); }
-export function spawnCoin(x, y){ add(makePickup(x, y, 'coin')); }
+export function spawnCoin(x, y){ add(makeCoin(x, y)); }
 
-// Apply damage to an enemy in ONE place so every source (bullets, melee,
-// explosion, poison) shares the death path: drop an energy orb AND a coin.
+// Cosmetic energy-drain orb: the ball-in-ring "energy" model flying from the dead
+// enemy to the hero. Purely visual — the energy is already credited on the kill.
+export function spawnDrain(x, y){ add({ tag:'drain', x, y, r:5, t:DRAIN_TIME, tMax:DRAIN_TIME, dead:false }); }
+
+// Apply damage to an enemy in ONE place so every source (bullets, melee, explosion,
+// poison) shares the death path: grant energy INSTANTLY, spawn the drain fx, drop a coin.
 export function hurtEnemy(e, dmg){
   if (e.dead) return;
   e.hp -= dmg;
-  if (e.hp <= 0){ e.dead = true; spawnEnergyOrb(e.x, e.y); spawnCoin(e.x, e.y); }
+  if (e.hp <= 0){
+    e.dead = true;
+    hero.energy = Math.min(hero.maxEnergy, hero.energy + ENERGY_PER_KILL);  // energy goes straight to me
+    spawnDrain(e.x, e.y);                                                    // visual: drain it from the enemy
+    spawnCoin(e.x, e.y);                                                     // only the coin lands on the floor
+  }
+}
+
+// Apply damage to the HERO in ONE place (parallels hurtEnemy): drop HP, trigger the
+// damage-blink, run the death path. Callers still gate i-frames / immunity upstream.
+export function hurtHero(dmg){
+  if (hero.dead) return;
+  hero.hp -= dmg;
+  hero.hurtFlash = HURT_FLASH;
+  if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; }
 }

@@ -6,7 +6,7 @@ import { ri, BARREL_HP, EXPLOSION_RADIUS, EXPLOSION_DMG, BARREL_MIN, BARREL_MAX,
          GAS_RADIUS, GAS_DURATION, POISON_DURATION, POISON_DPS } from './constants.js';
 import { entities, hero, round, add } from './state.js';
 import { cellOf, cellCenter } from './grid.js';
-import { hurtEnemy } from './entities.js';
+import { hurtEnemy, hurtHero } from './entities.js';
 import { addMod, modValue } from './modifiers.js';
 import { ctx } from './canvas.js';
 
@@ -48,7 +48,7 @@ function explodeBarrel(bar){
     if (e.dead) continue;
     if (Math.hypot(e.x-bar.x, e.y-bar.y) > EXPLOSION_RADIUS) continue;
     if (e.tag === 'enemy') hurtEnemy(e, EXPLOSION_DMG);
-    else if (e === hero){ if (!hero.invuln && modValue(hero, 'explosionImmune', 0) === 0){ hero.hp -= EXPLOSION_DMG; if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; } } }   // Blast Immune perk
+    else if (e === hero){ if (!hero.invuln && modValue(hero, 'explosionImmune', 0) === 0) hurtHero(EXPLOSION_DMG); }   // Blast Immune perk
     else if (e.tag === 'barrel') damageBarrel(e, EXPLOSION_DMG);
   }
 }
@@ -59,7 +59,7 @@ function poisonTick(e, dt){
   if (e.tag === 'enemy') hurtEnemy(e, dmg);                 // death + orb
   else if (e === hero && !hero.dead){
     if (modValue(hero, 'poisonImmune', 0) > 0) return;     // Poison Immune perk
-    hero.hp -= dmg; if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; }
+    hurtHero(dmg);
   }
   // ticks regardless of i-frames — an applied status isn't dodged by dashing
 }

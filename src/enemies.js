@@ -5,7 +5,7 @@
 import { HERO_R } from './constants.js';
 import { entities, hero, add } from './state.js';
 import { moveWithWalls } from './grid.js';
-import { makeBullet } from './entities.js';
+import { makeBullet, hurtHero } from './entities.js';
 
 function chargerBrain(e, ctx){
   return { moveX: ctx.ux, moveY: ctx.uy, attack: false };   // rush; contact dmg is passive
@@ -59,9 +59,7 @@ export function sysEnemies(dt){
       e.windupLeft -= dt;
       if (e.windupLeft <= 0){
         const d = Math.hypot(hero.x - e.x, hero.y - e.y);
-        if (!hero.dead && !hero.invuln && d < e.hitRange){
-          hero.hp -= e.heavyDmg; if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; }
-        }
+        if (!hero.dead && !hero.invuln && d < e.hitRange) hurtHero(e.heavyDmg);
       }
       continue;
     }
@@ -74,8 +72,7 @@ export function sysEnemies(dt){
     if (e.touchDmg > 0){
       e.touchCooldown -= dt;
       if (!hero.dead && !hero.invuln && dist < e.r + hero.r && e.touchCooldown <= 0){
-        hero.hp -= e.touchDmg; e.touchCooldown = 0.6;
-        if (hero.hp <= 0){ hero.hp = 0; hero.dead = true; }
+        hurtHero(e.touchDmg); e.touchCooldown = 0.6;
       }
     }
   }

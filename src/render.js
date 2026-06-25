@@ -24,6 +24,26 @@ function drawMap(){
     }
   }
 }
+// Spinning gold coin — the width oscillates with `spin` to read as a coin flip.
+function drawCoin(e){
+  const w = Math.max(1.5, e.r * Math.abs(Math.cos(e.spin)));
+  ctx.fillStyle = '#ffcf3a';
+  ctx.beginPath(); ctx.ellipse(e.x, e.y, w, e.r, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(e.x, e.y, w, e.r, 0, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,240,180,0.7)';   // face highlight
+  ctx.beginPath(); ctx.ellipse(e.x, e.y, w*0.5, e.r*0.55, 0, 0, Math.PI*2); ctx.fill();
+}
+// Cosmetic energy-drain orb: the ball-in-ring "energy" model, fading as it reaches the hero.
+function drawDrain(e){
+  const a = Math.max(0, Math.min(1, e.t / e.tMax));
+  ctx.globalAlpha = a;
+  ctx.fillStyle = '#7cffd0';
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(124,255,208,0.6)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(e.x, e.y, e.r+3, 0, Math.PI*2); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
 
 export function draw(){
   ctx.clearRect(0, 0, VW, VH);
@@ -43,7 +63,10 @@ export function draw(){
     if (e.tag === 'barrel'){ drawBarrel(e); continue; }
     if (e.tag === 'gas') continue;
     if (e.tag === 'fx'){ drawFx(e); continue; }
-    ctx.fillStyle = e.color;
+    if (e.tag === 'drain'){ drawDrain(e); continue; }
+    if (e.tag === 'pickup'){ drawCoin(e); continue; }
+    // hero blinks white briefly after taking damage
+    ctx.fillStyle = (e === hero && hero.hurtFlash > 0 && Math.floor(performance.now()/70) % 2 === 0) ? '#ffffff' : e.color;
     ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI*2); ctx.fill();
     if (e.tag === 'enemy'){
       const w = 22, h = 3, x = e.x-w/2, y = e.y-e.r-7;
@@ -55,36 +78,35 @@ export function draw(){
         ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 3 + 10*f, 0, Math.PI*2); ctx.stroke();
       }
     }
-    if (e.tag === 'pickup'){   // gold ring for coins, teal for energy orbs
-      ctx.strokeStyle = e.kind === 'coin' ? 'rgba(255,211,77,0.55)' : 'rgba(124,255,208,0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.r+3, 0, Math.PI*2); ctx.stroke();
-    }
     if (e === hero && hero.invuln){
       ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(e.x, e.y, e.r+3, 0, Math.PI*2); ctx.stroke();
     }
   }
 
-  // HUD: HP + energy bars
-  ctx.fillStyle = '#000'; ctx.fillRect(12, 12, VW-24, 10);
-  ctx.fillStyle = '#5ad1ff'; ctx.fillRect(12, 12, (VW-24)*(hero.hp/hero.maxHp), 10);
-  ctx.fillStyle = '#000'; ctx.fillRect(12, 24, VW-24, 5);
-  ctx.fillStyle = '#7cffd0'; ctx.fillRect(12, 24, (VW-24)*(hero.energy/hero.maxEnergy), 5);
-  ctx.fillStyle = '#778'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('WAVE '+round.wave+' · '+(round.miniWaveIndex+1)+'/'+round.miniWavesTotal, 12, 42);
-  // coin wallet: gold dot + count, under the wave label
+  // ---- top HUD band: opaque strip so HP/energy read as their own zone instead of
+  //      clashing with enemies spawning up top. Labels + coins sit just below it. ----
+  ctx.fillStyle = '#101016'; ctx.fillRect(0, 0, VW, 30);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(0, 30, VW, 1);   // divider
+  ctx.fillStyle = '#000'; ctx.fillRect(12, 8, VW-24, 9);
+  ctx.fillStyle = '#5ad1ff'; ctx.fillRect(12, 8, (VW-24)*(hero.hp/hero.maxHp), 9);
+  ctx.fillStyle = '#000'; ctx.fillRect(12, 20, VW-24, 5);
+  ctx.fillStyle = '#7cffd0'; ctx.fillRect(12, 20, (VW-24)*(hero.energy/hero.maxEnergy), 5);
+
+  ctx.fillStyle = '#9aa'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('WAVE '+round.wave+' · '+(round.miniWaveIndex+1)+'/'+round.miniWavesTotal, 12, 44);
+  // coin wallet: gold dot + count
   ctx.fillStyle = '#ffd34d';
-  ctx.beginPath(); ctx.arc(16, 53, 4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(16, 55, 4, 0, Math.PI*2); ctx.fill();
   ctx.textAlign = 'left'; ctx.font = '11px monospace';
-  ctx.fillText(String(hero.coins), 25, 57);
+  ctx.fillText(String(hero.coins), 25, 59);
   const aw = hero.weapons[hero.activeWeapon];
   ctx.textAlign = 'right';
   ctx.fillStyle = aw.kind === 'melee' ? '#bcd8ff' : '#fff2a8';
-  ctx.fillText(aw.name.toUpperCase()+' ['+aw.kind+']', VW-12, 42);
+  ctx.fillText(aw.name.toUpperCase()+' ['+aw.kind+']', VW-12, 44);
   const dab = hero.ability;
   ctx.fillStyle = (dab && dab.cooldownLeft <= 0) ? '#7cffd0' : '#5b5b6e';
-  ctx.fillText(dab ? ('DASH '+(dab.cooldownLeft <= 0 ? 'READY' : dab.cooldownLeft.toFixed(1)+'s')) : '', VW-12, 56);
+  ctx.fillText(dab ? ('DASH '+(dab.cooldownLeft <= 0 ? 'READY' : dab.cooldownLeft.toFixed(1)+'s')) : '', VW-12, 58);
 
   // telegraph: blink markers where the next batch will appear
   if (round.state === 'COMBAT' && !hero.dead && round.pendingSpawns.length){
